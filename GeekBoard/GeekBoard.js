@@ -468,27 +468,63 @@ async function getGmail() {
     return { unread: parseInt(m[1], 10) };
   });
 }
-async function getBridge() {
-  try {
-    const ic = FileManager.iCloud();
-    const p = ic.joinPath(ic.documentsDirectory(), CONFIG.BRIDGE_FILE);
-    if (!ic.fileExists(p)) return null;
-    await ic.downloadFileFromiCloud(p);
-    let j; try { j = JSON.parse(ic.readString(p)); } catch (e) { j = null; }
-    if (!j || typeof j !== "object" || !Object.keys(j).length) return null;
-    const ts = j.ts ? new Date(j.ts) : ic.modificationDate(p);
-    return {
-      move: num(j.move), moveGoal: num(j.moveGoal) || CONFIG.MOVE_GOAL,
-      exercise: num(j.exercise), exerciseGoal: num(j.exerciseGoal) || CONFIG.EXERCISE_GOAL,
-      stand: num(j.stand), standGoal: num(j.standGoal) || CONFIG.STAND_GOAL,
-      steps: num(j.steps), distance: num(j.distance),
-      ssid: j.ssid ? String(j.ssid).trim() : null, lanIp: j.lanIp ? String(j.lanIp).trim() : null,
-      carrier: j.carrier ? String(j.carrier).trim() : null, radio: j.radio ? String(j.radio).trim() : null,
-      alarm: j.alarm ? String(j.alarm).trim() : null,
-      ts, stale: (Date.now() - (ts ? ts.getTime() : 0)) / 3600000 > CONFIG.BRIDGE_STALE_HOURS,
-    };
-  } catch (e) { console.warn("bridge: " + e); return null; }
+// 桥接文件：快捷指令的「存储文件」经常不给扩展名（存出来就叫 geekboard-bridge），
+// 有的设置又会补成 .txt；Scriptable 也可能配置成本地存储而不是 iCloud。
+// 所以这里把常见的位置全试一遍，而不是让人回去改文件名。
+function bridgeCandidates() {
+  const base = String(CONFIG.BRIDGE_FILE || "geekboard-bridge.json");
+  const bare = base.replace(/\.[^./]*$/, "");
+  const names = [base, bare, bare + ".json", bare + ".txt", "GeekBoard/" + base, "GeekBoard/bridge.json"];
+  return names.filter((n, i) => names.indexOf(n) === i);
 }
+async function getBridge() {
+  const fms = [];
+  try { fms.push(FileManager.iCloud()); } catch (e) { /* 没开 iCloud */ }
+  try { fms.push(FileManager.local()); } catch (e) { /* ignore */ }
+  let found = null, fm2 = null, badJson = false;
+  for (const f of fms) {
+    for (const name of bridgeCandidates()) {
+      let p;
+      try { p = f.joinPath(f.documentsDirectory(), name); } catch (e) { continue; }
+      try { if (!f.fileExists(p)) continue; } catch (e) { continue; }
+      try { await f.downloadFileFromiCloud(p); } catch (e) { /* 本地文件没有这个方法 */ }
+      let raw = null;
+      try { raw = f.readString(p); } catch (e) { continue; }
+      let j = null;
+      try { j = JSON.parse(raw); } catch (e) { badJson = true; continue; }
+      if (!j || typeof j !== "object" || !Object.keys(j).length) continue;
+      found = j; fm2 = f;
+      try { found.__path = p; } catch (e) { /* ignore */ }
+      break;
+    }
+    if (found) break;
+  }
+  if (!found) return { status: badJson ? "badjson" : "missing" };
+
+  const j = found;
+  let ts = null;
+  if (j.ts) { const d = new Date(j.ts); if (!isNaN(d.getTime())) ts = d; }
+  if (!ts) { try { ts = fm2.modificationDate(j.__path); } catch (e) { ts = null; } }
+  const str = (v) => {
+    if (v == null) return null;
+    const t = String(v).trim();
+    // 快捷指令没替换变量时会原样写下 "{ssid}" 这种占位符，别当成真数据显示
+    if (!t || /^\{.*\}$/.test(t)) return null;
+    return t;
+  };
+  const b = {
+    status: "ok",
+    move: num(j.move), moveGoal: num(j.moveGoal) || CONFIG.MOVE_GOAL,
+    exercise: num(j.exercise), exerciseGoal: num(j.exerciseGoal) || CONFIG.EXERCISE_GOAL,
+    stand: num(j.stand), standGoal: num(j.standGoal) || CONFIG.STAND_GOAL,
+    steps: num(j.steps), distance: num(j.distance),
+    ssid: str(j.ssid), lanIp: str(j.lanIp), carrier: str(j.carrier), radio: str(j.radio), alarm: str(j.alarm),
+    ts, stale: ts ? (Date.now() - ts.getTime()) / 3600000 > CONFIG.BRIDGE_STALE_HOURS : false,
+  };
+  b.hasHealth = b.move != null || b.steps != null || b.exercise != null || b.stand != null;
+  return b;
+}
+
 function pickCalendars(all, include, exclude) {
   let cs = all;
   if (include && include.length) cs = cs.filter(c => include.includes(c.title));
@@ -925,7 +961,8 @@ async function build() {
   const cellW = Math.floor(innerW / 8);
   const qRowH = (LAY.font - 2.5) * 1.32;
   const hdrRowH = (LAY.font - 1.5) * 1.32;
-  const actRows = (bridge && (bridge.move != null || bridge.steps != null)) ? 4 : 1;
+  const bridgeOk = !!(bridge && bridge.status === "ok");
+  const actRows = (bridge && bridge.hasHealth) ? 4 : 1;
   const rightPad = (CONFIG.SHOW_SECTION_TINT ? (BLOCK_PAD_V + 1) * 6 : 0) + 6 + 8;
   const calRowH = (f) => f * 1.27 + 2;
   let qShown = quotesPre.length, gridFont = 0;
@@ -1003,7 +1040,7 @@ async function build() {
   else if ((stocks && stocks.stale) || (crypto && crypto.stale)) txt(mkBlock, "cached " + hm(new Date(Math.max(stocks ? stocks.t || 0 : 0, crypto ? crypto.t || 0 : 0))), F.small, C.amber);
 
   // ---- RIGHT: 活动 ----
-  if (bridge && (bridge.move != null || bridge.steps != null)) {
+  if (bridge && bridge.hasHealth) {
     const acBlock = block(right, C.ringMove, LAY.rightW);
     const rs = acBlock.addStack(); rs.layoutHorizontally(); rs.centerAlignContent(); rs.spacing = 6;
     const ringSize = Math.round(LAY.font * 3.4);
@@ -1026,10 +1063,15 @@ async function build() {
       if (bridge.stale) txt(s, "?", F.monoXsBold, C.amber);
     }
   } else {
+    // 分清楚是「文件没找到」「JSON 坏了」还是「文件读到了但没有健康数据」——
+    // 以前一律显示 no bridge，害人排查半天
+    const msg = !bridge || bridge.status === "missing" ? "no bridge file"
+      : bridge.status === "badjson" ? "bridge: bad JSON"
+      : "bridge ok · no health";
     const acBlock = block(right, C.faint, LAY.rightW);
     const s = acBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
-    icon(s, "figure.walk", LAY.font - 3, C.faint, "");
-    txt(s, "no bridge", F.small, C.faint);
+    icon(s, bridge && bridge.status === "badjson" ? "exclamationmark.triangle.fill" : "figure.walk", LAY.font - 3, bridge && bridge.status === "badjson" ? C.amber : C.faint, "");
+    txt(s, msg, F.small, bridge && bridge.status === "badjson" ? C.amber : C.faint, { scale: 0.7 });
   }
 
   w.addSpacer();
@@ -1042,17 +1084,17 @@ async function build() {
   if (v === true) pill(f1, "VPN ON", C.bg1, C.green);
   else txt(f1, v === false ? "VPN OFF" : "VPN ?", F.foot, C.dim, { scale: 1 });
   if (net && net.stale && N) icon(f1, "exclamationmark.triangle.fill", LAY.font - 2.5, C.amber, "!");
-  if (CONFIG.SHOW_WIFI && bridge && bridge.ssid) {
+  if (CONFIG.SHOW_WIFI && bridgeOk && bridge.ssid) {
     f1.addSpacer(6);
     icon(f1, "wifi", LAY.font - 2, bridge.stale ? C.faint : C.cyan, "");
     txt(f1, bridge.ssid.slice(0, 14), F.foot, bridge.stale ? C.faint : C.dim);
   }
-  if (CONFIG.SHOW_SIM && bridge && (bridge.carrier || bridge.radio)) {
+  if (CONFIG.SHOW_SIM && bridgeOk && (bridge.carrier || bridge.radio)) {
     f1.addSpacer(6);
     icon(f1, "antenna.radiowaves.left.and.right", LAY.font - 2, bridge.stale ? C.faint : C.dim, "");
     txt(f1, [bridge.carrier && bridge.carrier.slice(0, 8), bridge.radio].filter(Boolean).join(" "), F.foot, bridge.stale ? C.faint : C.dim);
   }
-  if (bridge && bridge.alarm) {
+  if (bridgeOk && bridge.alarm) {
     f1.addSpacer(6);
     icon(f1, "alarm.fill", LAY.font - 2, bridge.stale ? C.dim : C.amber, "");
     txt(f1, bridge.alarm, F.foot, bridge.stale ? C.dim : C.fg);

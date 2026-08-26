@@ -12,6 +12,10 @@
 //   NOPERIOD=1                     Yahoo omits currentTradingPeriod (session must read UNKNOWN, not OPEN)
 //   STALECACHE=1                   seed the cache with the OLD schema (must be discarded, not rendered)
 //   BRIDGE=0                       no Shortcuts bridge file   BRIDGE=stale  bridge file is old
+//   BRIDGE=noext                   saved as "geekboard-bridge" with no extension (what Shortcuts does)
+//   BRIDGE=badjson                 file present but not valid JSON
+//   BRIDGE=nohealth                valid JSON, but the health fields came back empty
+//   BRIDGE=placeholder             Shortcuts never substituted the variables ("{ssid}" etc.)
 //   NOSYM=1                        SFSymbol.named returns null (tests the text fallbacks)
 //   CACHE=/tmp/gbcache.json        persist the mocked cache between runs, so TTL behaviour is testable
 //   SKEW=25                        advance the mocked clock by N minutes (use with CACHE to test TTL expiry)
@@ -87,10 +91,20 @@ if (process.env.STALECACHE) {
 const fmLocal = { joinPath: (a, b) => a + "/" + b, documentsDirectory: () => "/local", fileExists: p => p in files || p === "/local/geekboard-cache", createDirectory() {}, readString: p => files[p], writeString: (p, s) => { files[p] = s; } };
 const bridgeAgeH = process.env.BRIDGE === "stale" ? 9 : 0.7;
 const fmIcloud = Object.assign({}, fmLocal, { documentsDirectory: () => "/icloud", downloadFileFromiCloud: async () => {}, modificationDate: () => new RealDate(NOW.getTime() - bridgeAgeH * 3600000) });
-files["/icloud/geekboard-bridge.json"] = JSON.stringify(process.env.BRIDGE === "0" ? {} : {
+const FULL_BRIDGE = {
   move: "412 kcal", exercise: 22, stand: 8, steps: "6,842", distance: "4.92 km",
   ssid: "HomeNet-5G", lanIp: "192.168.1.23", carrier: "KDDI", radio: "5G", alarm: "06:30",
-});
+};
+const NO_HEALTH = { move: "", exercise: "", stand: "", steps: "", distance: "", ssid: "HomeNet-5G", carrier: "KDDI", radio: "5G", alarm: "06:30" };
+const PLACEHOLDER = { move: "{move}", steps: "{steps}", ssid: "{ssid}", carrier: "{carrier}", radio: "{radio}", alarm: "{alarm}" };
+switch (process.env.BRIDGE) {
+  case "0": break;                                                   // nothing on disk at all
+  case "noext":  files["/icloud/geekboard-bridge"] = JSON.stringify(FULL_BRIDGE); break;
+  case "badjson": files["/icloud/geekboard-bridge.json"] = "{move: 412, oops}"; break;
+  case "nohealth": files["/icloud/geekboard-bridge.json"] = JSON.stringify(NO_HEALTH); break;
+  case "placeholder": files["/icloud/geekboard-bridge.json"] = JSON.stringify(PLACEHOLDER); break;
+  default: files["/icloud/geekboard-bridge.json"] = JSON.stringify(FULL_BRIDGE);
+}
 class FileManager { static local() { return fmLocal; } static iCloud() { return fmIcloud; } }
 
 // ---- market session windows, in epoch seconds relative to the mocked "now" ----

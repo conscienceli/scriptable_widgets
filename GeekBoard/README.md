@@ -164,7 +164,9 @@ iOS 不让第三方 App 读健康数据、WiFi 名、内网 IP、SIM 信息，�
 
 11. **存储文件**：服务 `iCloud Drive`，关闭「询问存储位置」，路径 `Scriptable/geekboard-bridge.json`，打开「如果文件存在则覆盖」。
 
-跑一次，去「文件」App 确认 iCloud Drive/Scriptable/ 下有 `geekboard-bridge.json`。样例见 [`geekboard-bridge.sample.json`](geekboard-bridge.sample.json)。
+跑一次，去「文件」App 确认 iCloud Drive/Scriptable/ 下多了这个文件。样例见 [`geekboard-bridge.sample.json`](geekboard-bridge.sample.json)。
+
+> **扩展名不用较真。** 快捷指令的「存储文件」经常把 `.json` 吃掉，存出来就叫 `geekboard-bridge`，有的设置又会补成 `.txt`。脚本会把这些名字挨个试一遍（iCloud 和本地存储都找），所以叫什么都能读到。
 
 圆环目标快捷指令拿不到，在 CONFIG 里手填 `MOVE_GOAL` 等；或在 JSON 里加 `"moveGoal":"500"` 覆盖。
 
@@ -230,7 +232,10 @@ CACHE=/tmp/c.json SESSION=CLOSED SKEW=25 node tools/mock_run.js  # 25 分钟后�
 | 一片空白或只剩一行 | 某个权限没给。在 Scriptable 内运行一次看控制台报错 |
 | 行情全是 `--` | Yahoo 偶尔限流，等几分钟；或代码写错（去 Yahoo 网页确认） |
 | 经纬度灰色 | 定位失败，正在用 `FALLBACK_COORDS`。检查 Scriptable 定位权限是否为「始终」 |
-| 圆环不显示 | 确认 iCloud Drive/Scriptable/geekboard-bridge.json 存在且是合法 JSON（所有值都加引号） |
+| 活动区块显示 `no bridge file` | 六个候选路径都没找到文件。确认文件在 iCloud Drive/**Scriptable** 目录下（不是别的文件夹），文件名以 `geekboard-bridge` 开头 |
+| 显示 `bridge: bad JSON` | 文件找到了但解析不了。多半是某个值没加引号，或者快捷指令的「文本」动作里漏了引号——所有值都要用 `"` 包起来 |
+| 显示 `bridge ok · no health` | 文件读到了，但活动能量/步数这些是空的。检查快捷指令里的「查找健康样本」有没有授权，以及筛选条件是不是「开始日期 是 今天」 |
+| 底栏 WiFi / SIM 是空的 | 快捷指令没替换变量，写下的是 `{ssid}` 这种字面量。脚本会识别并当作没有值——回快捷指令里把变量真正插进去 |
 | 内容偏窄 / 右边留白，或底栏被裁 | 尺寸推算与你的机型有出入。截图量一下填 `SIZE_OVERRIDE`，见「尺寸自适应」 |
 | 月历的数字非常小甚至看不清 | 老版本的 bug：格子是「固定宽度 + 两个弹性 spacer 夹文字」，spacer 抢宽度的优先级高于文字，把带 `minimumScaleFactor` 的文字压到 1~2pt。已移除 spacer |
 | 月历日期对不齐 | 也是老版本的 bug：曾试过「不设列宽、靠等宽字体自然对齐」，但列宽只差 0.6pt 就填满，字宽估算稍有偏差整行就被压缩，各格压缩量不同于是错位。现在列宽 = `floor(可用宽 / 8)` 写死，字号反过来受列宽约束并留 3pt 余量，文字禁止缩放 |
