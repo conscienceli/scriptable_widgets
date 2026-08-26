@@ -24,12 +24,29 @@ class FakeDate extends RealDate { constructor(...a) { if (!a.length) return new 
 global.Date = FakeDate;
 
 class Color { constructor(hex, a) { this.hex = hex; this.alpha = a == null ? 1 : a; } }
-class Font { static regularMonospacedSystemFont(s) { return { n: "mono", s }; } static boldMonospacedSystemFont(s) { return { n: "monoB", s }; } static systemFont(s) { return { n: "sys", s }; } }
+class Font {
+  static regularMonospacedSystemFont(s) { return { n: "mono", s }; }
+  static boldMonospacedSystemFont(s) { return { n: "monoB", s }; }
+  static systemFont(s) { return { n: "sys", s }; }
+  static mediumSystemFont(s) { return { n: "sysM", s }; }
+  static semiboldSystemFont(s) { return { n: "sysSB", s }; }
+  static boldSystemFont(s) { return { n: "sysB", s }; }
+  static semiboldRoundedSystemFont(s) { return { n: "rndSB", s }; }
+  static mediumRoundedSystemFont(s) { return { n: "rndM", s }; }
+  static boldRoundedSystemFont(s) { return { n: "rndB", s }; }
+}
 class Size { constructor(w, h) { this.width = w; this.height = h; } }
 class Point { constructor(x, y) { this.x = x; this.y = y; } }
 class Rect { constructor(x, y, w, h) { Object.assign(this, { x, y, w, h }); } }
-class Path { addLines(p) { this.pts = p; } }
-class DrawContext { constructor() { this.ops = []; } setLineWidth() {} setStrokeColor() {} strokeEllipse() { this.ops.push("ell"); } addPath() {} strokePath() { this.ops.push("arc"); } getImage() { return { img: "rings" }; } }
+class Path { addLines(p) { this.pts = p; } addRoundedRect() {} addRect() {} }
+class DrawContext {
+  constructor() { this.ops = []; }
+  setLineWidth() {} setStrokeColor() {} setFillColor() {} setFont() {} setTextColor() {}
+  strokeEllipse() { this.ops.push("ell"); } fillEllipse() { this.ops.push("fill-ell"); }
+  fillRect() { this.ops.push("fill-rect"); } drawText(t) { this.ops.push("text:" + t); }
+  addPath() {} strokePath() { this.ops.push("arc"); } fillPath() { this.ops.push("fill-path"); }
+  getImage() { return { img: this.ops.some(o => String(o).startsWith("text:")) ? "nowline" : (this.size && this.size.width === this.size.height ? "rings" : "daybar") }; }
+}
 // A few symbols only exist on newer iOS; the script must fall back rather than crash.
 const MISSING_SYMBOLS = new Set(["aqi.medium", "checklist", "calendar.day.timeline.left", "mountain.2.fill"]);
 class SFSymbol {
@@ -54,6 +71,7 @@ class Stack {
   addImage(i) { const x = new WidgetImage(i); this.items.push(x); return x; }
   addSpacer(n) { this.items.push({ kind: "spacer", n }); }
 }
+class LinearGradient { }
 class ListWidget extends Stack { constructor() { super(); this.dir = "v"; } presentLarge() { return Promise.resolve(); } }
 const CACHE_FILE = process.env.CACHE;
 const files = (CACHE_FILE && fs.existsSync(CACHE_FILE)) ? JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")) : {};
@@ -175,7 +193,7 @@ class Reminder {
 }
 class Script { static setWidget(w) { global.__widget = w; } static complete() {} }
 const config = { runsInWidget: true };
-Object.assign(global, { Color, Font, Size, Point, Rect, Path, DrawContext, SFSymbol, Timer, ListWidget, FileManager, Request, Location, Device, Calendar, CalendarEvent, Reminder, Script, config });
+Object.assign(global, { Color, Font, Size, Point, Rect, Path, DrawContext, LinearGradient, SFSymbol, Timer, ListWidget, FileManager, Request, Location, Device, Calendar, CalendarEvent, Reminder, Script, config });
 console.warn = (...a) => { if (process.env.VERBOSE) console.error("WARN", ...a); };
 
 const src = fs.readFileSync(__dirname + "/../GeekBoard.js", "utf8");

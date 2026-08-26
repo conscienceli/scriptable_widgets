@@ -58,6 +58,10 @@ const CONFIG = {
   WEEK_STARTS_MONDAY: true,
   SHOW_ICONS: true,                          // 关掉则纯文字（更省一点，但辨识度低）
   SHOW_SECTION_TINT: true,                   // 区块底色分区
+  SHOW_DAY_BAR: true,                        // 顶部一天的进度条（白昼段 + 当前时刻游标）
+  SHOW_NOW_LINE: true,                       // 日程里插一条「现在」分隔线
+  SHOW_WIFI: true,                           // 底栏显示 WiFi 名（需要桥接）
+  SHOW_SIM: true,                            // 底栏显示数据 SIM 运营商与制式（需要桥接）
 };
 
 // =====================================================================
@@ -85,6 +89,7 @@ function widgetSize() {
 const WSZ = widgetSize();
 const PAD_X = 11, PAD_TOP = 8, PAD_BOT = 6;
 const BLOCK_PAD_V = 1;          // 区块上下内边距，直接吃掉纵向空间，改大之前先看 leftLines
+const DAY_BAR_H = 5;            // 顶部进度条高度
 const LAY = (() => {
   const W = WSZ.w - PAD_X * 2;
   const font = Math.max(10.5, Math.min(14, W / 26.5));
@@ -93,41 +98,50 @@ const LAY = (() => {
   const leftW = W - rightW - gap;
   // 行距实测：字号 13.2 时相邻两行间隔 16.67pt，即 1.263 倍。取 1.27 略微保守。
   const lineH = font * 1.27;
-  const blockV = BLOCK_PAD_V * 2;
+  const blockV = (CONFIG.SHOW_SECTION_TINT ? BLOCK_PAD_V + 1 : BLOCK_PAD_V) * 2;
   const stackGap = 2;
   const stripH = lineH + blockV;                 // 顶部三个横条各自的高度
-  const footH = (font - 1) * 1.27 + blockV;      // 底栏每行的高度
-  // 底栏行数、TODO 区块在不在，都要等数据回来才知道，所以 chrome 做成函数、渲染时再算，
-  // 免得像上一版那样按“永远两行底栏”预留，白白浪费一行多。
-  const bodyH = (footerRows) => WSZ.h - PAD_TOP - PAD_BOT - stripH * 3 - footH * footerRows - stackGap * (3 + footerRows);
-  const linesFor = (footerRows, hasTodo) =>
-    Math.max(6, Math.floor((bodyH(footerRows) - blockV * (hasTodo ? 2 : 1) - (hasTodo ? stackGap : 0)) / lineH));
+  const footH = (font - 1.5) * 1.27 + blockV;    // 底栏（只剩一行）
+  const barH = CONFIG.SHOW_DAY_BAR ? DAY_BAR_H + stackGap : 0;
+  // TODO 区块在不在要等数据回来才知道，所以 chrome 做成函数、渲染时再算
+  const bodyH = () => WSZ.h - PAD_TOP - PAD_BOT - stripH * 3 - footH - barH - stackGap * 4;
+  const linesFor = (hasTodo) =>
+    Math.max(6, Math.floor((bodyH() - blockV * (hasTodo ? 2 : 1) - (hasTodo ? stackGap : 0)) / lineH));
   return { W, font, gap, rightW, leftW, lineH, blockV, stackGap, bodyH, linesFor };
 })();
 
 // =====================================================================
-// THEME
+// THEME  —— Tokyo Night 配色，柔和而不刺眼，暗色壁纸下也不会糊成一片
 // =====================================================================
 const C = {
-  bg: new Color("#0b0f14"), fg: new Color("#e6edf3"), dim: new Color("#8b949e"), faint: new Color("#4a525c"),
-  blue: new Color("#58a6ff"), green: new Color("#3fb950"), red: new Color("#f85149"), amber: new Color("#d29922"),
-  purple: new Color("#bc8cff"), cyan: new Color("#39d2c0"), orange: new Color("#f78166"), line: new Color("#21262d"),
-  ringMove: new Color("#fa114f"), ringEx: new Color("#92e82a"), ringStand: new Color("#00d8ff"),
+  bg0: new Color("#1B1D2B"), bg1: new Color("#12131C"),   // 背景渐变两端
+  fg: new Color("#C6D0F5"), dim: new Color("#8A93B8"), faint: new Color("#4B5273"),
+  blue: new Color("#7AA2F7"), cyan: new Color("#7DCFFF"), teal: new Color("#73DACA"),
+  green: new Color("#9ECE6A"), red: new Color("#F7768E"), amber: new Color("#E0AF68"),
+  orange: new Color("#FF9E64"), purple: new Color("#BB9AF7"), pink: new Color("#FF75A0"),
+  line: new Color("#2A2E45"),
+  ringMove: new Color("#F7768E"), ringEx: new Color("#9ECE6A"), ringStand: new Color("#7DCFFF"),
 };
 const UP = CONFIG.CN_COLOR_CONVENTION ? C.red : C.green;
 const DOWN = CONFIG.CN_COLOR_CONVENTION ? C.green : C.red;
 const tint = (c, a) => new Color(c.hex, a);
+
+// 字体分工：需要竖向对齐的（时间、价格、日期格）用等宽；
+// 叙述性的（事件标题、区块标签）用比例字体——同样宽度能多塞几个字，观感也软一些。
 const F = {
-  body: Font.regularMonospacedSystemFont(LAY.font),
-  bold: Font.boldMonospacedSystemFont(LAY.font),
-  small: Font.regularMonospacedSystemFont(LAY.font - 1.5),
-  smallBold: Font.boldMonospacedSystemFont(LAY.font - 1.5),
-  foot: Font.regularMonospacedSystemFont(LAY.font - 1),
-  footBold: Font.boldMonospacedSystemFont(LAY.font - 1),
-  quote: Font.regularMonospacedSystemFont(LAY.font - 2.5),
-  quoteBold: Font.boldMonospacedSystemFont(LAY.font - 2.5),
-  grid: Font.regularMonospacedSystemFont(LAY.font - 2),
-  gridBold: Font.boldMonospacedSystemFont(LAY.font - 2),
+  mono: Font.regularMonospacedSystemFont(LAY.font),
+  monoBold: Font.boldMonospacedSystemFont(LAY.font),
+  monoSm: Font.regularMonospacedSystemFont(LAY.font - 1.5),
+  monoSmBold: Font.boldMonospacedSystemFont(LAY.font - 1.5),
+  monoXs: Font.regularMonospacedSystemFont(LAY.font - 2.5),
+  monoXsBold: Font.boldMonospacedSystemFont(LAY.font - 2.5),
+  title: Font.systemFont(LAY.font),
+  titleMed: Font.mediumSystemFont(LAY.font),
+  label: Font.semiboldRoundedSystemFont(LAY.font - 2),
+  labelSm: Font.semiboldRoundedSystemFont(LAY.font - 3),
+  small: Font.systemFont(LAY.font - 2),
+  smallMed: Font.mediumSystemFont(LAY.font - 2),
+  foot: Font.mediumRoundedSystemFont(LAY.font - 1.5),
 };
 
 // =====================================================================
@@ -523,8 +537,8 @@ async function getReminders(now) {
 // =====================================================================
 function txt(stack, s, font, color, opts) {
   const t = stack.addText(String(s));
-  t.font = font || F.body; t.textColor = color || C.fg; t.lineLimit = 1;
-  t.minimumScaleFactor = (opts && opts.scale) || 0.7;
+  t.font = font || F.title; t.textColor = color || C.fg; t.lineLimit = 1;
+  t.minimumScaleFactor = (opts && opts.scale) != null ? opts.scale : 0.75;
   if (opts && opts.right) t.rightAlignText();
   return t;
 }
@@ -547,9 +561,6 @@ function icon(stack, name, size, color, fallback) {
   if (fallback) txt(stack, fallback, F.small, color || C.dim);
   return false;
 }
-function hairline(w, width, color) {
-  const s = w.addStack(); s.size = new Size(width, 1); s.backgroundColor = color || C.line;
-}
 // 区块容器：低饱和底色 + 圆角，用来划分边界
 function block(parent, accent, width) {
   const s = parent.addStack();
@@ -557,11 +568,11 @@ function block(parent, accent, width) {
   s.spacing = 1;
   if (width) s.size = new Size(width, 0);
   if (CONFIG.SHOW_SECTION_TINT) {
-    s.backgroundColor = tint(accent, 0.085);
-    s.cornerRadius = 5;
-    s.setPadding(BLOCK_PAD_V, 5, BLOCK_PAD_V, 5);
+    s.backgroundColor = tint(accent, 0.1);
+    s.cornerRadius = 8;
+    s.setPadding(BLOCK_PAD_V + 1, 6, BLOCK_PAD_V + 1, 6);
   } else {
-    s.setPadding(1, 0, 1, 0);
+    s.setPadding(BLOCK_PAD_V, 0, BLOCK_PAD_V, 0);
   }
   return s;
 }
@@ -570,6 +581,77 @@ function strip(parent, accent, width) {
   const row = s.addStack(); row.layoutHorizontally(); row.centerAlignContent(); row.spacing = 4;
   return row;
 }
+// 小圆角标签（VPN 之类的状态用）
+function pill(stack, label, fg, bg) {
+  const p = stack.addStack();
+  p.centerAlignContent();
+  p.setPadding(1, 5, 1, 5);
+  p.backgroundColor = bg;
+  p.cornerRadius = 7;
+  txt(p, label, F.labelSm, fg, { scale: 1 });
+  return p;
+}
+
+// ---- 一天的进度条：轨道 + 白昼段 + 当前时刻游标 -------------------------
+// 直接回答「现在处于一天的哪个位置」，比再写一遍时间有用。
+function dayBarImage(w, h, now, sunriseStr, sunsetStr) {
+  const ctx = new DrawContext();
+  ctx.size = new Size(w, h); ctx.opaque = false; ctx.respectScreenScale = true;
+  const r = h / 2;
+  const frac = (d) => (d.getHours() * 60 + d.getMinutes()) / 1440;
+  const parseHM = (s) => {
+    if (!s) return null;
+    const m = String(s).match(/(\d{1,2}):(\d{2})/);
+    return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) / 1440 : null;
+  };
+  const track = new Path();
+  track.addRoundedRect(new Rect(0, 0, w, h), r, r);
+  ctx.setFillColor(tint(C.faint, 0.4));
+  ctx.addPath(track); ctx.fillPath();
+
+  const a = parseHM(sunriseStr), b = parseHM(sunsetStr);
+  if (a != null && b != null && b > a) {
+    // 白昼段画成一条渐变（DrawContext 没有渐变填充，用细切片近似）
+    const x0 = a * w, x1 = b * w, n = 48;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const sx = x0 + (x1 - x0) * (i / n), sw = (x1 - x0) / n + 0.6;
+      // 日出橙 → 正午黄 → 日落橙
+      const k = 1 - Math.abs(t - 0.5) * 2;
+      const col = new Color(k > 0.5 ? C.amber.hex : C.orange.hex, 0.35 + 0.5 * k);
+      ctx.setFillColor(col);
+      ctx.fillRect(new Rect(sx, 0, sw, h));
+    }
+  }
+  // 当前时刻：外圈用背景色挖一圈，让游标在任何底色上都清晰
+  const cx = Math.max(r, Math.min(w - r, frac(now) * w));
+  ctx.setFillColor(new Color(C.bg1.hex, 0.95));
+  ctx.fillEllipse(new Rect(cx - r - 1.6, -1.6, (r + 1.6) * 2, h + 3.2));
+  ctx.setFillColor(C.fg);
+  ctx.fillEllipse(new Rect(cx - r, 0, r * 2, h));
+  return ctx.getImage();
+}
+
+// ---- 「现在」分隔线：圆点 + 时刻 + 细线，插在今天已过去和还没到的日程之间 ----
+function nowLineImage(w, h, timeStr, color) {
+  const ctx = new DrawContext();
+  ctx.size = new Size(w, h); ctx.opaque = false; ctx.respectScreenScale = true;
+  const cy = h / 2, fs = Math.max(7, h - 3);
+  ctx.setFillColor(color);
+  ctx.fillEllipse(new Rect(0, cy - 2.5, 5, 5));
+  ctx.setFont(Font.boldMonospacedSystemFont(fs));
+  ctx.setTextColor(color);
+  const textX = 8, textW = timeStr.length * fs * 0.62;
+  ctx.drawText(timeStr, new Point(textX, cy - fs * 0.72));
+  // 线从文字右侧开始，避免压到字
+  const lx = textX + textW + 4;
+  if (lx < w - 2) {
+    ctx.setFillColor(tint(color, 0.45));
+    ctx.fillRect(new Rect(lx, cy - 0.5, w - lx, 1));
+  }
+  return ctx.getImage();
+}
+
 function wxSymbol(code, isDay) {
   if (code === 0) return isDay ? "sun.max.fill" : "moon.stars.fill";
   if (code <= 2) return isDay ? "cloud.sun.fill" : "cloud.moon.fill";
@@ -591,8 +673,8 @@ function wxColor(code) {
   if (code <= 86) return C.blue;
   return C.purple;
 }
-const uvColor = uv => uv >= 8 ? C.red : uv >= 6 ? C.amber : uv >= 3 ? C.fg : C.dim;
-const aqiColor = a => a == null ? C.dim : a <= 50 ? C.green : a <= 100 ? C.amber : a <= 150 ? C.red : C.purple;
+const uvColor = uv => uv >= 8 ? C.red : uv >= 6 ? C.orange : uv >= 3 ? C.amber : C.dim;
+const aqiColor = a => a == null ? C.dim : a <= 50 ? C.green : a <= 100 ? C.amber : a <= 150 ? C.orange : C.red;
 // 交易时段 → 图标 / 颜色 / 标签
 const SESSION_META = {
   OPEN:    { icon: "circle.fill",  color: C.green,  label: "OPEN",   fb: "●" },
@@ -609,7 +691,7 @@ function ringsImage(b, S) {
   const rings = [[b.move, b.moveGoal, C.ringMove, S * 0.43], [b.exercise, b.exerciseGoal, C.ringEx, S * 0.30], [b.stand, b.standGoal, C.ringStand, S * 0.167]];
   for (const [val, goal, col, r] of rings) {
     ctx.setLineWidth(lw);
-    ctx.setStrokeColor(new Color(col.hex, 0.18));
+    ctx.setStrokeColor(new Color(col.hex, 0.2));
     ctx.strokeEllipse(new Rect(cx - r, cy - r, 2 * r, 2 * r));
     const frac = (val == null || !goal) ? 0 : Math.min(1, val / goal);
     if (frac <= 0) continue;
@@ -630,7 +712,12 @@ function ringsImage(b, S) {
 async function build() {
   const now = new Date();
   const w = new ListWidget();
-  w.backgroundColor = C.bg;
+  const bg = new LinearGradient();
+  bg.colors = [C.bg0, C.bg1];
+  bg.locations = [0, 1];
+  bg.startPoint = new Point(0, 0);
+  bg.endPoint = new Point(0.6, 1);
+  w.backgroundGradient = bg;
   w.setPadding(PAD_TOP, PAD_X, PAD_BOT, PAD_X);
   w.spacing = 2;
   w.refreshAfterDate = new Date(now.getTime() + CONFIG.REFRESH_MIN * 60000);
@@ -644,12 +731,12 @@ async function build() {
   const lun = lunarOf(now), jq = jieqiAround(now);
   const r1 = strip(w, C.blue, LAY.W);
   icon(r1, "calendar", LAY.font, C.blue, "");
-  txt(r1, WD[now.getDay()] + " " + pad2(now.getDate()) + " " + MON[now.getMonth()], F.bold, C.fg);
+  txt(r1, WD[now.getDay()] + " " + pad2(now.getDate()) + " " + MON[now.getMonth()], F.monoBold, C.fg);
   txt(r1, "W" + isoWeek(now) + "·D" + dayOfYear(now), F.small, C.dim);
   r1.addSpacer(2);
   if (lun) {
-    icon(r1, "moon.fill", LAY.font - 1.5, C.amber, "");
-    txt(r1, lun.ganzhi + lun.shengxiao + " " + lun.monthName + lun.dayName, F.body, C.amber);
+    icon(r1, "moon.fill", LAY.font - 2, C.amber, "");
+    txt(r1, lun.ganzhi + lun.shengxiao + " " + lun.monthName + lun.dayName, F.title, C.amber);
   }
   if (jq && jq.next) {
     const today = jq.prev && jq.prev.days === 0;
@@ -661,31 +748,31 @@ async function build() {
   const r2 = strip(w, C.cyan, LAY.W);
   const W = wx && wx.v;
   if (W) {
-    icon(r2, wxSymbol(W.code, W.day), LAY.font, wxColor(W.code), "");
-    txt(r2, Math.round(W.t) + "°", F.bold, C.fg);
+    icon(r2, wxSymbol(W.code, W.day), LAY.font + 1, wxColor(W.code), "");
+    txt(r2, Math.round(W.t) + "°", F.monoBold, C.fg);
     if (Math.abs(W.feel - W.t) >= 2) txt(r2, "~" + Math.round(W.feel) + "°", F.small, C.dim);
-    txt(r2, Math.round(W.tmin) + "/" + Math.round(W.tmax), F.small, C.dim);
-    icon(r2, "humidity.fill", LAY.font - 2, C.blue, "H");
-    txt(r2, Math.round(W.rh) + "%", F.body, C.fg);
+    txt(r2, Math.round(W.tmin) + "/" + Math.round(W.tmax), F.monoSm, C.dim);
+    icon(r2, "humidity.fill", LAY.font - 2, C.cyan, "H");
+    txt(r2, Math.round(W.rh) + "%", F.monoSm, C.fg);
     const uvv = W.uvmax != null ? W.uvmax : W.uv;
     icon(r2, "sun.max.fill", LAY.font - 2, uvColor(uvv), "UV");
-    txt(r2, Math.round(W.uv) + (uvv != null && Math.round(uvv) > Math.round(W.uv) ? "/" + Math.round(uvv) : ""), F.body, uvColor(uvv));
+    txt(r2, Math.round(W.uv) + (uvv != null && Math.round(uvv) > Math.round(W.uv) ? "/" + Math.round(uvv) : ""), F.monoSm, uvColor(uvv));
     icon(r2, "umbrella.fill", LAY.font - 2, W.pop >= 50 ? C.blue : C.dim, "P");
-    txt(r2, (W.pop != null ? W.pop : "--") + "%", F.body, W.pop >= 50 ? C.blue : C.fg);
+    txt(r2, (W.pop != null ? W.pop : "--") + "%", F.monoSm, W.pop >= 50 ? C.blue : C.fg);
     if (aqi && aqi.v && aqi.v.aqi != null) {
       icon(r2, "aqi.medium", LAY.font - 2, aqiColor(aqi.v.aqi), "AQI");
-      txt(r2, String(Math.round(aqi.v.aqi)), F.body, aqiColor(aqi.v.aqi));
+      txt(r2, String(Math.round(aqi.v.aqi)), F.monoSm, aqiColor(aqi.v.aqi));
     }
     const ms = W.wind / 3.6;
     if (CONFIG.UNITS_METRIC ? ms >= 1 : W.wind >= 3) {
       icon(r2, "wind", LAY.font - 2, C.dim, "");
-      txt(r2, compass(W.wdir) + (CONFIG.UNITS_METRIC ? Math.round(ms) : Math.round(W.wind)), F.small, W.wind >= 36 ? C.amber : C.dim);
+      txt(r2, compass(W.wdir) + (CONFIG.UNITS_METRIC ? Math.round(ms) : Math.round(W.wind)), F.monoSm, W.wind >= 36 ? C.amber : C.dim);
     }
     r2.addSpacer();
     if (wx.stale) icon(r2, "exclamationmark.triangle.fill", LAY.font - 2, C.amber, "!");
   } else {
     icon(r2, "cloud.fill", LAY.font, C.dim, "");
-    txt(r2, "weather unavailable", F.body, C.dim);
+    txt(r2, "weather unavailable", F.small, C.dim);
     r2.addSpacer();
   }
 
@@ -693,102 +780,131 @@ async function build() {
   const r3 = strip(w, C.purple, LAY.W);
   const L = loc.v;
   icon(r3, "location.fill", LAY.font - 2, L.fixed ? C.faint : C.purple, "");
-  txt(r3, Math.abs(L.lat).toFixed(4) + (L.lat >= 0 ? "N" : "S") + " " + Math.abs(L.lon).toFixed(4) + (L.lon >= 0 ? "E" : "W"), F.small, L.fixed ? C.dim : C.fg);
+  txt(r3, Math.abs(L.lat).toFixed(4) + (L.lat >= 0 ? "N" : "S") + " " + Math.abs(L.lon).toFixed(4) + (L.lon >= 0 ? "E" : "W"), F.monoSm, L.fixed ? C.dim : C.fg);
   const alt = (L.alt != null && !L.fixed) ? L.alt : (W && W.elev != null ? W.elev : null);
   if (alt != null) {
     icon(r3, "mountain.2.fill", LAY.font - 2, C.dim, "↑");
-    txt(r3, Math.round(alt) + "m", F.small, C.fg);
+    txt(r3, Math.round(alt) + "m", F.monoSm, C.fg);
   }
-  if (place) txt(r3, place.length > 8 ? place.slice(0, 8) : place, F.body, C.purple);
+  if (place) txt(r3, place.length > 8 ? place.slice(0, 8) : place, F.titleMed, C.purple);
   r3.addSpacer();
   if (W && W.sunrise) {
     icon(r3, "sunrise.fill", LAY.font - 2, C.amber, "");
-    txt(r3, W.sunrise.slice(11, 16), F.small, C.dim);
+    txt(r3, W.sunrise.slice(11, 16), F.monoSm, C.dim);
     icon(r3, "sunset.fill", LAY.font - 2, C.orange, "");
-    txt(r3, W.sunset.slice(11, 16), F.small, C.dim);
+    txt(r3, W.sunset.slice(11, 16), F.monoSm, C.dim);
   }
-  if (CONFIG.SHOW_PRESSURE && W && W.pres != null) txt(r3, Math.round(W.pres) + "hPa", F.small, C.dim);
+  if (CONFIG.SHOW_PRESSURE && W && W.pres != null) txt(r3, Math.round(W.pres) + "hPa", F.monoSm, C.dim);
+
+  // ============ 一天的进度条 ============
+  if (CONFIG.SHOW_DAY_BAR) {
+    const barRow = w.addStack(); barRow.layoutHorizontally(); barRow.centerAlignContent();
+    const im = barRow.addImage(dayBarImage(LAY.W, DAY_BAR_H, now, W && W.sunrise, W && W.sunset));
+    im.imageSize = new Size(LAY.W, DAY_BAR_H);
+  }
 
   // ============ BODY ============
   const body = w.addStack(); body.layoutHorizontally(); body.topAlignContent(); body.spacing = LAY.gap;
   const left = body.addStack(); left.layoutVertically(); left.size = new Size(LAY.leftW, 0); left.spacing = 2;
   const right = body.addStack(); right.layoutVertically(); right.size = new Size(LAY.rightW, 0); right.spacing = 3;
 
-  // ---- LEFT: AGENDA ----
+  // ---- LEFT: AGENDA（按日期分组）----
   const E = ev || { byDay: [[]], today: [], upcoming: 0 };
   const remRows = rem || [];
-  const todayAll = E.today || [];
+  const byDay = E.byDay || [[]];
+  const todayAll = byDay[0] || [];
   const nextEv = todayAll.find(e => !e.isAllDay && e.startDate > now)
-    || (E.byDay || []).slice(1).flat().find(e => !e.isAllDay);
+    || byDay.slice(1).flat().find(e => !e.isAllDay);
   const cur = todayAll.find(e => !e.isAllDay && e.startDate <= now && e.endDate > now);
 
-  // 行数分配：提醒事项为 0 时整个 TODO 区块不占位；没有桥接时底栏只有一行。
-  // 这两件事都要等数据回来才知道，所以到这里才算可用行数。
   const remWanted = Math.min(remRows.length, CONFIG.MIN_REMINDER_LINES);
   const hasTodo = remRows.length > 0;
-  const footerRows = bridge ? 2 : 1;
-  const leftLines = LAY.linesFor(footerRows, hasTodo);
-  const bodyH = LAY.bodyH(footerRows);
+  const leftLines = LAY.linesFor(hasTodo);
+  const bodyH = LAY.bodyH();
   const evLines = Math.max(3, leftLines - 1 - (hasTodo ? 1 + remWanted : 0));
 
   const agBlock = block(left, C.blue, LAY.leftW);
-  const ah = agBlock.addStack(); ah.layoutHorizontally(); ah.centerAlignContent(); ah.spacing = 3;
-  icon(ah, "calendar.day.timeline.left", LAY.font - 2.5, C.blue, "");
-  txt(ah, "AGENDA", F.smallBold, C.blue);
-  txt(ah, todayAll.length + (E.upcoming ? "·" + E.upcoming : ""), F.small, C.dim);
+  const ah = agBlock.addStack(); ah.layoutHorizontally(); ah.centerAlignContent(); ah.spacing = 4;
+  icon(ah, "calendar.day.timeline.left", LAY.font - 2, C.blue, "");
+  txt(ah, "AGENDA", F.label, C.blue, { scale: 1 });
   ah.addSpacer();
-  if (cur) { icon(ah, "play.fill", LAY.font - 3, C.green, "▶"); txt(ah, hm(cur.endDate), F.small, C.green); }
-  else if (nextEv) {
+  if (cur) {
+    icon(ah, "play.fill", LAY.font - 3, C.green, "▶");
+    txt(ah, hm(cur.endDate), F.monoSm, C.green);
+  } else if (nextEv) {
     icon(ah, "arrow.right", LAY.font - 3, C.blue, "→");
-    const rel = ah.addDate(nextEv.startDate); rel.applyRelativeStyle(); rel.font = F.small; rel.textColor = C.blue; rel.lineLimit = 1; rel.minimumScaleFactor = 0.7;
+    const rel = ah.addDate(nextEv.startDate); rel.applyRelativeStyle(); rel.font = F.monoSm; rel.textColor = C.blue; rel.lineLimit = 1; rel.minimumScaleFactor = 0.7;
   } else if (!todayAll.length) txt(ah, "clear", F.small, C.faint);
 
-  const evRow = (e, dayOff) => {
+  const innerLeftW = LAY.leftW - (CONFIG.SHOW_SECTION_TINT ? 12 : 0);
+  const groupHeader = (dayOff, date) => {
     const s = agBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
-    const past = e.endDate <= now, ongoing = e.startDate <= now && e.endDate > now;
-    const future = dayOff > 0;
-    const col = future || past ? C.dim : ongoing ? C.green : e === nextEv ? C.blue : C.fg;
-    const when = e.isAllDay ? "ALL  " : hm(e.startDate);
-    txt(s, (future ? "+" : "") + when, F.body, past ? C.faint : future ? C.dim : col);
-    txt(s, e.title, F.body, past ? C.dim : col, { scale: 0.85 });
+    const label = dayOff === 0 ? "TODAY" : dayOff === 1 ? "TOMORROW" : WD[date.getDay()];
+    const col = dayOff === 0 ? C.blue : dayOff === 1 ? C.teal : C.dim;
+    const dot = s.addStack(); dot.size = new Size(3, LAY.font - 3); dot.backgroundColor = col; dot.cornerRadius = 1.5;
+    txt(s, label, F.labelSm, col, { scale: 1 });
     s.addSpacer();
-    // 今天的事看时长有用；往后几天的事，看是哪天更有用
-    if (future) txt(s, md(e.startDate), F.small, C.faint);
-    else if (!e.isAllDay) txt(s, durStr(e.endDate - e.startDate), F.small, C.faint);
-    else if (e.calendar && e.calendar.title) txt(s, e.calendar.title.slice(0, 6), F.small, C.faint);
+    // 右侧只放日期：day>=2 时左边已经是星期几了，再写一遍是重复
+    txt(s, md(date), F.monoXs, C.faint);
+  };
+  const evRow = (e, dayOff) => {
+    const s = agBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 5;
+    const past = dayOff === 0 && e.endDate <= now;
+    const ongoing = e.startDate <= now && e.endDate > now && dayOff === 0;
+    const col = past ? C.faint : ongoing ? C.green : e === nextEv ? C.blue : dayOff > 0 ? C.dim : C.fg;
+    txt(s, e.isAllDay ? "ALL" : hm(e.startDate), F.monoSm, past ? C.faint : ongoing ? C.green : e === nextEv ? C.blue : C.dim);
+    txt(s, e.title, F.title, col, { scale: 0.8 });
+    s.addSpacer();
+    if (!e.isAllDay) txt(s, durStr(e.endDate - e.startDate), F.monoXs, C.faint);
+    else if (e.calendar && e.calendar.title) txt(s, e.calendar.title.slice(0, 6), F.monoXs, C.faint);
+  };
+  const nowLine = () => {
+    const s = agBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent();
+    const h = Math.max(9, LAY.font - 2);
+    const im = s.addImage(nowLineImage(innerLeftW, h, hm(now), C.orange));
+    im.imageSize = new Size(innerLeftW, h);
   };
 
-  // 今天：行数不够时先丢已结束的
-  let todayList = todayAll;
-  if (todayList.length > evLines) {
-    const live = todayList.filter(e => e.endDate > now);
-    todayList = live.length >= evLines ? live : todayList.slice(todayList.length - evLines);
+  // 排版：今天在最前，「现在」线插在已过去与未到之间；行数有余量再往后铺
+  let shown = 0, eventsShown = 0, nowDrawn = false;
+  const totalEvents = byDay.reduce((n, d) => n + d.length, 0);
+  for (let d = 0; d < byDay.length && shown < evLines; d++) {
+    const list = byDay[d];
+    if (!list.length) continue;
+    if (shown + 1 >= evLines) break;               // 只剩一行就别单独放个组标题
+    groupHeader(d, new Date(dayStart(now).getTime() + d * DAY));
+    shown++;
+    for (const e of list) {
+      if (shown >= evLines) break;
+      if (CONFIG.SHOW_NOW_LINE && d === 0 && !nowDrawn && !e.isAllDay && e.startDate > now) { nowLine(); nowDrawn = true; shown++; if (shown >= evLines) break; }
+      evRow(e, d);
+      shown++; eventsShown++;
+    }
+    // 今天的事全部已过去 → 「现在」线收在这一组末尾
+    if (CONFIG.SHOW_NOW_LINE && d === 0 && !nowDrawn && shown < evLines) { nowLine(); nowDrawn = true; shown++; }
   }
-  let shown = 0;
-  for (const e of todayList) { if (shown >= evLines) break; evRow(e, 0); shown++; }
-  for (let d = 1; d < (E.byDay || []).length && shown < evLines; d++) {
-    for (const e of E.byDay[d]) { if (shown >= evLines) break; evRow(e, d); shown++; }
-  }
-  const hiddenEv = todayAll.length + (E.upcoming || 0) - shown;
-  if (hiddenEv > 0) txt(agBlock, "+" + hiddenEv + " more", F.small, C.faint);
+  const hiddenEv = totalEvents - eventsShown;
+  if (hiddenEv > 0 && shown < evLines) { txt(agBlock, "+" + hiddenEv + " more", F.small, C.faint); shown++; }
+  const rendered = shown;
 
   // ---- LEFT: TODO ----
   if (hasTodo) {
-    const remLines = Math.max(1, leftLines - 2 - shown - (hiddenEv > 0 ? 1 : 0));
+    const remLines = Math.max(1, leftLines - 2 - rendered);
     const tdBlock = block(left, C.orange, LAY.leftW);
-    const rh = tdBlock.addStack(); rh.layoutHorizontally(); rh.centerAlignContent(); rh.spacing = 3;
+    const rh = tdBlock.addStack(); rh.layoutHorizontally(); rh.centerAlignContent(); rh.spacing = 4;
     const overdue = remRows.filter(r => r.dueDate && r.dueDate < now).length;
-    icon(rh, "checklist", LAY.font - 2.5, C.orange, "");
-    txt(rh, "TODO", F.smallBold, C.orange);
-    txt(rh, String(remRows.length) + (overdue ? "·" + overdue + "!" : ""), F.small, overdue ? C.red : C.dim);
+    icon(rh, "checklist", LAY.font - 2, C.orange, "");
+    txt(rh, "TODO", F.label, C.orange, { scale: 1 });
+    if (overdue) pill(rh, overdue + " late", C.bg1, C.red);
     rh.addSpacer();
+    txt(rh, String(remRows.length), F.monoXs, C.faint);
     for (const r of remRows.slice(0, remLines)) {
-      const s = tdBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
+      const s = tdBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 5;
       const od = r.dueDate && r.dueDate < now;
       const dueToday = r.dueDate && dayStart(r.dueDate).getTime() === dayStart(now).getTime();
       const hi = r.priority > 0 && r.priority <= 4;
       icon(s, hi || od ? "exclamationmark.circle.fill" : "circle", LAY.font - 3.5, hi || od ? C.red : C.faint, hi || od ? "!" : "•");
-      txt(s, r.title, F.body, od ? C.red : dueToday ? C.fg : C.dim, { scale: 0.85 });
+      txt(s, r.title, F.title, od ? C.red : dueToday ? C.fg : C.dim, { scale: 0.8 });
       s.addSpacer();
       let due = "";
       if (r.dueDate) {
@@ -796,56 +912,42 @@ async function build() {
         else if (dueToday) due = r.dueDateIncludesTime ? hm(r.dueDate) : "today";
         else due = md(r.dueDate);
       }
-      if (due) txt(s, due, F.small, od ? C.red : C.faint);
+      if (due) txt(s, due, F.monoXs, od ? C.red : C.faint);
     }
     if (remRows.length > remLines) txt(tdBlock, "+" + (remRows.length - remLines) + " more", F.small, C.faint);
   }
 
   // ---- RIGHT: 月历 ----
-  // 右栏三块（月历 / 行情 / 活动）要一起塞进 bodyH。行情和活动的行数是定的，
-  // 所以把富余量折算成月历的字号——宁可月历小一点，也不能撑爆把底栏挤出去。
   const gsPre = E.gridStart || (() => { const f = new Date(now.getFullYear(), now.getMonth(), 1); f.setDate(1 - ((f.getDay() + (CONFIG.WEEK_STARTS_MONDAY ? 6 : 0)) % 7)); return f; })();
   const calRows = 1 + Math.ceil((Math.round((new Date(now.getFullYear(), now.getMonth() + 1, 0) - gsPre) / DAY) + 1) / 7);
   const quotesPre = [...((stocks && stocks.v) || []), ...((crypto && crypto.v) || [])].slice(0, CONFIG.QUOTE_ROWS);
-  const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 10 : 0);
-  const cellW = Math.floor(innerW / 8);          // 月历 8 列（周数 + 7 天），列宽取整避免累积误差
-  const qRowH = (LAY.font - 2.5) * 1.32;        // 行情数据行
-  const hdrRowH = (LAY.font - 1.5) * 1.32;       // 区块标题行（字号比数据行大一号）
+  const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 12 : 0);
+  const cellW = Math.floor(innerW / 8);
+  const qRowH = (LAY.font - 2.5) * 1.32;
+  const hdrRowH = (LAY.font - 1.5) * 1.32;
   const actRows = (bridge && (bridge.move != null || bridge.steps != null)) ? 4 : 1;
-  // 留 8pt 余量：这些行高是按字号估的，估得偏乐观就会把底栏挤出去，宁可月历字小一点
-  const rightPad = (CONFIG.SHOW_SECTION_TINT ? BLOCK_PAD_V * 6 : 0) + 6 + 8;
-  // 先按全部行情行数试算；月历字号已经压到下限还塞不下，就减行情行数（最少留 2 行）
-  // 月历每行 = 字号 × 1.27（实测行距倍率）+ 2（格子上下内边距各 1）
+  const rightPad = (CONFIG.SHOW_SECTION_TINT ? (BLOCK_PAD_V + 1) * 6 : 0) + 6 + 8;
   const calRowH = (f) => f * 1.27 + 2;
   let qShown = quotesPre.length, gridFont = 0;
   for (;;) {
     const avail = bodyH - rightPad - hdrRowH - qShown * qRowH - actRows * qRowH;
-    gridFont = Math.min(LAY.font, (avail / calRows - 2) / 1.27);   // 高度有富余就让月历跟正文一样大
+    gridFont = Math.min(LAY.font, (avail / calRows - 2) / 1.27);
     if (gridFont >= 7.5 || qShown <= 2) break;
     qShown--;
   }
-  // 宽度也是硬约束：2 个等宽字符必须在一个格子里留有余量，否则又会被压
   const gridFontMaxW = (cellW - 3) / (0.62 * 2);
   gridFont = Math.max(7.5, Math.min(gridFont, gridFontMaxW));
   const FG = { grid: Font.regularMonospacedSystemFont(gridFont), gridBold: Font.boldMonospacedSystemFont(gridFont) };
 
   const calBlock = block(right, C.blue, LAY.rightW);
-  // 月历格子：列宽写死、格子里绝不放 spacer。
-  //
-  // 踩过的两个坑：
-  //   1) 「固定宽度 + 两个弹性 spacer 夹文字」——spacer 抢宽度的优先级高于文字，
-  //      带 minimumScaleFactor 的文字会被一路压到 1~2pt，底色框高度却正常。
-  //   2) 「不设宽度，靠等宽字体自然对齐」——列宽算得只差 0.6pt 就填满，
-  //      字宽估算稍有偏差就整行被压缩，而各格压缩量不同，于是错位。
-  // 现在两头都不赌：列宽 = floor(可用宽 / 8)，字号反过来受列宽约束并留 3pt 余量，
-  // 文字不允许缩放（minimumScaleFactor = 1）——真放不下就该看见截断，而不是悄悄变形。
+  // 月历格子：列宽写死、格子里绝不放 spacer，文字禁止缩放。踩过的两个坑见 README。
   const pad2c = (v) => { const t = String(v); return t.length >= 2 ? t : " " + t; };
   const gridGap = Math.max(0, (innerW - cellW * 8) / 7);
   const cell = (row, s, font, color, bg) => {
     const c = row.addStack();
-    c.size = new Size(cellW, 0);      // 宽度固定、高度自动
+    c.size = new Size(cellW, 0);
     c.centerAlignContent();
-    if (bg) { c.backgroundColor = bg; c.cornerRadius = 3; }
+    if (bg) { c.backgroundColor = bg; c.cornerRadius = 4; }
     const t = c.addText(pad2c(s));
     t.font = font; t.textColor = color; t.lineLimit = 1;
     t.minimumScaleFactor = 1;
@@ -869,36 +971,33 @@ async function build() {
       const wkend = CONFIG.WEEK_STARTS_MONDAY ? i >= 5 : (i === 0 || i === 6);
       const has = E.eventDays && E.eventDays.has(d.getMonth() + "-" + d.getDate());
       let col = !inMonth ? C.faint : wkend ? C.dim : C.fg;
-      if (has && inMonth && !isToday) col = C.blue;
-      if (isToday) cell(row, String(d.getDate()), FG.gridBold, C.bg, C.fg);
-      else cell(row, String(d.getDate()), has && inMonth ? FG.gridBold : FG.grid, col);
+      if (isToday) cell(row, String(d.getDate()), FG.gridBold, C.bg1, C.blue);
+      else if (has && inMonth) cell(row, String(d.getDate()), FG.gridBold, C.blue, tint(C.blue, 0.16));
+      else cell(row, String(d.getDate()), FG.grid, col);
     }
   }
 
   // ---- RIGHT: 行情 ----
   const quotes = quotesPre.slice(0, qShown);
   const mkSession = (stocks && stocks.v && stocks.v.length && stocks.v[0].session) || (quotes.length ? quotes[0].session : null);
-  const mkMeta = SESSION_META[mkSession] || SESSION_META.OPEN;
+  const mkMeta = SESSION_META[mkSession] || SESSION_META.UNKNOWN;
   const mkBlock = block(right, mkSession === "CLOSED" ? C.faint : mkMeta.color, LAY.rightW);
-  const mh = mkBlock.addStack(); mh.layoutHorizontally(); mh.centerAlignContent(); mh.spacing = 3;
-  icon(mh, "chart.line.uptrend.xyaxis", LAY.font - 2.5, mkMeta.color, "");
-  txt(mh, "MKT", F.smallBold, mkMeta.color);
+  const mh = mkBlock.addStack(); mh.layoutHorizontally(); mh.centerAlignContent(); mh.spacing = 4;
+  icon(mh, "chart.line.uptrend.xyaxis", LAY.font - 2, mkMeta.color, "");
+  txt(mh, "MKT", F.label, mkMeta.color, { scale: 1 });
   mh.addSpacer();
-  if (mkSession) {
-    icon(mh, mkMeta.icon, LAY.font - 3.5, mkMeta.color, mkMeta.fb);
-    txt(mh, mkMeta.label, F.smallBold, mkMeta.color);
-  }
+  if (mkSession && mkMeta.label) txt(mh, mkMeta.label, F.labelSm, mkMeta.color, { scale: 1 });
   for (const q of quotes) {
-    const meta = SESSION_META[q.session] || SESSION_META.OPEN;
+    const meta = SESSION_META[q.session] || SESSION_META.UNKNOWN;
     const closed = q.session === "CLOSED";
     const s = mkBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 3;
     icon(s, meta.icon, LAY.font - 4.5, meta.color, "");
-    txt(s, q.sym.length > 5 ? q.sym.slice(0, 5) : q.sym, F.quoteBold, closed ? C.dim : C.fg);
+    txt(s, q.sym.length > 5 ? q.sym.slice(0, 5) : q.sym, F.monoXsBold, closed ? C.dim : C.fg);
     s.addSpacer();
-    txt(s, fmtPrice(q.price), F.quote, closed ? C.dim : C.fg);
+    txt(s, fmtPrice(q.price), F.monoXs, closed ? C.dim : C.fg);
     const pctCol = q.pct == null ? C.dim : closed ? tint(q.pct >= 0 ? UP : DOWN, 0.75) : (q.pct >= 0 ? UP : DOWN);
-    txt(s, fmtPct(q.pct), F.quoteBold, pctCol, { right: true });
-    if (q.extPct != null) txt(s, (q.extPct >= 0 ? "+" : "") + q.extPct.toFixed(1), F.quote, q.extPct >= 0 ? tint(UP, 0.8) : tint(DOWN, 0.8), { right: true });
+    txt(s, fmtPct(q.pct), F.monoXsBold, pctCol, { right: true });
+    if (q.extPct != null) txt(s, (q.extPct >= 0 ? "+" : "") + q.extPct.toFixed(1), F.monoXs, q.extPct >= 0 ? tint(UP, 0.8) : tint(DOWN, 0.8), { right: true });
   }
   if (!quotes.length) txt(mkBlock, "no market data", F.small, C.faint);
   else if ((stocks && stocks.stale) || (crypto && crypto.stale)) txt(mkBlock, "cached " + hm(new Date(Math.max(stocks ? stocks.t || 0 : 0, crypto ? crypto.t || 0 : 0))), F.small, C.amber);
@@ -906,78 +1005,65 @@ async function build() {
   // ---- RIGHT: 活动 ----
   if (bridge && (bridge.move != null || bridge.steps != null)) {
     const acBlock = block(right, C.ringMove, LAY.rightW);
-    const rs = acBlock.addStack(); rs.layoutHorizontally(); rs.centerAlignContent(); rs.spacing = 5;
+    const rs = acBlock.addStack(); rs.layoutHorizontally(); rs.centerAlignContent(); rs.spacing = 6;
     const ringSize = Math.round(LAY.font * 3.4);
     const im = rs.addImage(ringsImage(bridge, ringSize)); im.imageSize = new Size(ringSize, ringSize);
     const col = rs.addStack(); col.layoutVertically(); col.spacing = 0;
     const dimB = bridge.stale ? C.dim : C.fg;
     const line = (label, v, goal, c) => {
       const s = col.addStack(); s.layoutHorizontally(); s.spacing = 3; s.centerAlignContent();
-      txt(s, label, F.quoteBold, bridge.stale ? C.dim : c);
-      txt(s, (v == null ? "--" : Math.round(v)) + "/" + goal, F.quote, dimB);
+      txt(s, label, F.monoXsBold, bridge.stale ? C.dim : c);
+      txt(s, (v == null ? "--" : Math.round(v)) + "/" + goal, F.monoXs, dimB);
     };
     line("M", bridge.move, bridge.moveGoal, C.ringMove);
     line("E", bridge.exercise, bridge.exerciseGoal, C.ringEx);
     line("S", bridge.stand, bridge.standGoal, C.ringStand);
     if (bridge.steps != null) {
-      const s = col.addStack(); s.layoutHorizontally(); s.spacing = 2; s.centerAlignContent();
+      const s = col.addStack(); s.layoutHorizontally(); s.spacing = 3; s.centerAlignContent();
       icon(s, "figure.walk", LAY.font - 4.5, dimB, "");
-      txt(s, Math.round(bridge.steps).toLocaleString("en-US"), F.quote, dimB);
-      if (bridge.distance != null) txt(s, bridge.distance.toFixed(1) + "km", F.quote, C.dim);
-      if (bridge.stale) txt(s, "?", F.quoteBold, C.amber);
+      txt(s, Math.round(bridge.steps).toLocaleString("en-US"), F.monoXs, dimB);
+      if (bridge.distance != null) txt(s, bridge.distance.toFixed(1) + "km", F.monoXs, C.dim);
+      if (bridge.stale) txt(s, "?", F.monoXsBold, C.amber);
     }
   } else {
     const acBlock = block(right, C.faint, LAY.rightW);
-    const s = acBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 3;
+    const s = acBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
     icon(s, "figure.walk", LAY.font - 3, C.faint, "");
-    txt(s, "no bridge", F.small, C.faint);   // 只在这里说一次，底栏不再重复
+    txt(s, "no bridge", F.small, C.faint);
   }
 
   w.addSpacer();
 
-  // ============ FOOTER 1: 公网 / VPN ============
+  // ============ FOOTER：只留 VPN 状态，公网 IP / 运营商 / WiFi 名 / 内网 IP 都去掉 ============
   const f1 = strip(w, C.green, LAY.W);
   const N = net && net.v;
-  if (N) {
-    icon(f1, "globe", LAY.font - 2, C.green, "");
-    txt(f1, N.ip, F.foot, C.fg);
-    txt(f1, ispShort(N.isp) + (N.cc ? " " + N.cc : ""), F.foot, C.dim);
-    const v = vpnOn(N);
-    icon(f1, v === true ? "lock.shield.fill" : v === false ? "lock.open.fill" : "questionmark.circle", LAY.font - 2, v === true ? C.amber : v === false ? C.faint : C.faint, "");
-    txt(f1, v === true ? "VPN ON" : v === false ? "VPN OFF" : "VPN ?", F.footBold, v === true ? C.amber : C.dim);
-    if (net.stale) icon(f1, "exclamationmark.triangle.fill", LAY.font - 2.5, C.amber, "!");
-  } else {
-    icon(f1, "globe", LAY.font - 2, C.faint, "");
-    txt(f1, "offline", F.foot, C.dim);
+  const v = vpnOn(N);
+  icon(f1, v === true ? "lock.shield.fill" : v === false ? "lock.open.fill" : "questionmark.circle", LAY.font - 1, v === true ? C.green : v === false ? C.faint : C.faint, "");
+  if (v === true) pill(f1, "VPN ON", C.bg1, C.green);
+  else txt(f1, v === false ? "VPN OFF" : "VPN ?", F.foot, C.dim, { scale: 1 });
+  if (net && net.stale && N) icon(f1, "exclamationmark.triangle.fill", LAY.font - 2.5, C.amber, "!");
+  if (CONFIG.SHOW_WIFI && bridge && bridge.ssid) {
+    f1.addSpacer(6);
+    icon(f1, "wifi", LAY.font - 2, bridge.stale ? C.faint : C.cyan, "");
+    txt(f1, bridge.ssid.slice(0, 14), F.foot, bridge.stale ? C.faint : C.dim);
+  }
+  if (CONFIG.SHOW_SIM && bridge && (bridge.carrier || bridge.radio)) {
+    f1.addSpacer(6);
+    icon(f1, "antenna.radiowaves.left.and.right", LAY.font - 2, bridge.stale ? C.faint : C.dim, "");
+    txt(f1, [bridge.carrier && bridge.carrier.slice(0, 8), bridge.radio].filter(Boolean).join(" "), F.foot, bridge.stale ? C.faint : C.dim);
+  }
+  if (bridge && bridge.alarm) {
+    f1.addSpacer(6);
+    icon(f1, "alarm.fill", LAY.font - 2, bridge.stale ? C.dim : C.amber, "");
+    txt(f1, bridge.alarm, F.foot, bridge.stale ? C.dim : C.fg);
   }
   f1.addSpacer();
   if (gmail && gmail.v) {
     icon(f1, "envelope.fill", LAY.font - 2, gmail.v.unread ? C.blue : C.faint, "");
-    txt(f1, String(gmail.v.unread), F.footBold, gmail.v.unread ? C.blue : C.dim);
+    txt(f1, String(gmail.v.unread), F.foot, gmail.v.unread ? C.blue : C.dim);
   }
   icon(f1, "arrow.clockwise", LAY.font - 3, C.faint, "↻");
   txt(f1, hm(now), F.foot, C.faint, { right: true });
-
-  // ============ FOOTER 2: 本地网络 / SIM / 闹钟 ============
-  // 没有桥接时这一整行只剩一句 "no bridge"，而活动区块已经说过了 —— 干脆整行不画，把高度让出来
-  if (bridge) {
-  const f2 = strip(w, C.dim, LAY.W);
-  const bcol = bridge.stale ? C.faint : C.dim;
-  if (bridge && (bridge.ssid || bridge.lanIp)) {
-    icon(f2, "wifi", LAY.font - 2, bcol, "");
-    txt(f2, [bridge.ssid && bridge.ssid.slice(0, 14), bridge.lanIp].filter(Boolean).join(" "), F.foot, bcol);
-  }
-  if (bridge && (bridge.carrier || bridge.radio)) {
-    icon(f2, "antenna.radiowaves.left.and.right", LAY.font - 2, bcol, "");
-    txt(f2, [bridge.carrier && bridge.carrier.slice(0, 8), bridge.radio].filter(Boolean).join(" "), F.foot, bcol);
-  }
-  if (bridge && bridge.alarm) {
-    icon(f2, "alarm.fill", LAY.font - 2, bridge.stale ? C.dim : C.fg, "");
-    txt(f2, bridge.alarm, F.foot, bridge.stale ? C.dim : C.fg);
-  }
-  if (bridge.stale) txt(f2, "stale " + Math.round((now - bridge.ts) / 3600000) + "h", F.foot, C.amber);
-  f2.addSpacer();
-  }
 
   return w;
 }
