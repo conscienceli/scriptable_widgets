@@ -103,6 +103,9 @@ switch (process.env.BRIDGE) {
   case "badjson": files["/icloud/geekboard-bridge.json"] = "{move: 412, oops}"; break;
   case "nohealth": files["/icloud/geekboard-bridge.json"] = JSON.stringify(NO_HEALTH); break;
   case "placeholder": files["/icloud/geekboard-bridge.json"] = JSON.stringify(PLACEHOLDER); break;
+  // dual-SIM: Shortcuts pasted the whole list, so the JSON string contains real newlines
+  case "dualsim": files["/icloud/geekboard-bridge.json"] =
+    '{"move":"412","steps":"6842","ssid":"HomeNet-5G","carrier":"\u4e2d\u56fd\u8054\u901a\n\u4e2d\u56fd\u79fb\u52a8","radio":"5G NR NSA\r\n5G NR","alarm":"06:30"}'; break;
   default: files["/icloud/geekboard-bridge.json"] = JSON.stringify(FULL_BRIDGE);
 }
 class FileManager { static local() { return fmLocal; } static iCloud() { return fmIcloud; } }

@@ -471,6 +471,25 @@ async function getGmail() {
 // 桥接文件：快捷指令的「存储文件」经常不给扩展名（存出来就叫 geekboard-bridge），
 // 有的设置又会补成 .txt；Scriptable 也可能配置成本地存储而不是 iCloud。
 // 所以这里把常见的位置全试一遍，而不是让人回去改文件名。
+// 双卡手机上「获取蜂窝网络的运营商名称」返回的是列表，快捷指令会把它连着换行整个塞进
+// 文本里，于是 JSON 字符串内部出现了真正的换行——这在 JSON 里非法，直接 parse 会失败。
+// 正解是在快捷指令里加一步「从列表中获取项目」，但这里也兜一下，把串内换行折成 " / " 重试，
+// 免得整个桥接因为一张副卡就全废。
+function parseLoose(raw) {
+  try { return JSON.parse(raw); } catch (e) { /* 继续尝试修复 */ }
+  let out = "", inStr = false, esc = false, justJoined = false;
+  for (const ch of String(raw)) {
+    if (esc) { out += ch; esc = false; justJoined = false; continue; }
+    if (ch === "\\") { out += ch; esc = true; justJoined = false; continue; }
+    if (ch === '"') { inStr = !inStr; out += ch; justJoined = false; continue; }
+    if (inStr && (ch === "\n" || ch === "\r")) {
+      if (!justJoined) { out += " / "; justJoined = true; }
+      continue;
+    }
+    out += ch; justJoined = false;
+  }
+  try { return JSON.parse(out); } catch (e) { return null; }
+}
 function bridgeCandidates() {
   const base = String(CONFIG.BRIDGE_FILE || "geekboard-bridge.json");
   const bare = base.replace(/\.[^./]*$/, "");
@@ -490,8 +509,8 @@ async function getBridge() {
       try { await f.downloadFileFromiCloud(p); } catch (e) { /* 本地文件没有这个方法 */ }
       let raw = null;
       try { raw = f.readString(p); } catch (e) { continue; }
-      let j = null;
-      try { j = JSON.parse(raw); } catch (e) { badJson = true; continue; }
+      const j = parseLoose(raw);
+      if (j == null) { badJson = true; continue; }
       if (!j || typeof j !== "object" || !Object.keys(j).length) continue;
       found = j; fm2 = f;
       try { found.__path = p; } catch (e) { /* ignore */ }
@@ -505,6 +524,7 @@ async function getBridge() {
   let ts = null;
   if (j.ts) { const d = new Date(j.ts); if (!isNaN(d.getTime())) ts = d; }
   if (!ts) { try { ts = fm2.modificationDate(j.__path); } catch (e) { ts = null; } }
+  const firstOf = (v) => (v == null ? null : String(v).split(" / ")[0].trim() || null);
   const str = (v) => {
     if (v == null) return null;
     const t = String(v).trim();
@@ -518,7 +538,10 @@ async function getBridge() {
     exercise: num(j.exercise), exerciseGoal: num(j.exerciseGoal) || CONFIG.EXERCISE_GOAL,
     stand: num(j.stand), standGoal: num(j.standGoal) || CONFIG.STAND_GOAL,
     steps: num(j.steps), distance: num(j.distance),
-    ssid: str(j.ssid), lanIp: str(j.lanIp), carrier: str(j.carrier), radio: str(j.radio), alarm: str(j.alarm),
+    ssid: str(j.ssid), lanIp: str(j.lanIp),
+    // 双卡兜底拼出来的 "中国联通 / 中国移动" 塞不进底栏，截断了更难看——取第一段就好，
+    // 想控制取哪张卡，回快捷指令里用「从列表中获取项目」选第一项/最后一项
+    carrier: firstOf(str(j.carrier)), radio: firstOf(str(j.radio)), alarm: str(j.alarm),
     ts, stale: ts ? (Date.now() - ts.getTime()) / 3600000 > CONFIG.BRIDGE_STALE_HOURS : false,
   };
   b.hasHealth = b.move != null || b.steps != null || b.exercise != null || b.stand != null;
