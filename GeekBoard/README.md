@@ -1,135 +1,232 @@
 # GeekBoard · Scriptable 大号 Widget
 
-极客风高信息密度面板。一屏塞进日程、提醒、农历节气、天气、空气质量、经纬度海拔、月历、股票与加密货币行情、活动圆环、网络与 VPN 状态、电量。
+极客风高信息密度面板。一屏塞进日程、提醒、农历节气、天气、空气质量、经纬度海拔、月历、股票与加密货币行情（含盘前盘后）、活动圆环、网络与 VPN 状态。
 
 ![preview](preview.png)
 
-> 预览图为模拟数据；实机使用 SF Mono，观感一致。
+> 预览图为模拟数据，展示的是**盘后**状态；实机使用 SF Mono 与真实 SF Symbols，观感一致。
 
-## 文件说明
+## 目录
 
-| 文件 | 用途 |
+- [布局与图例](#布局与图例)
+- [安装](#安装)
+- [配置](#配置)
+- [行情：盘前 / 盘中 / 盘后 / 休市](#行情盘前--盘中--盘后--休市)
+- [尺寸自适应](#尺寸自适应)
+- [快捷指令桥接](#快捷指令桥接)
+- [省电](#省电)
+- [数据源与失效行为](#数据源与失效行为)
+- [iOS 拿不到的东西](#ios-拿不到的东西)
+- [排错](#排错)
+
+## 布局与图例
+
+从上到下七个区块，每块有自己的低饱和底色，用来划分边界：
+
+| 区块 | 底色 | 内容 |
+|---|---|---|
+| 日期 | 蓝 | 周几 · 日 · 月 / ISO 周号 · 年内第几天 / 干支生肖 · 农历 / 下一个节气倒数（当天则直接显示节气名，橙色） |
+| 天气 | 青 | 天气图标 · 当前温度 / 体感（与实温差 ≥2° 才显示）/ 今日低-高 / 湿度 / UV 当前÷今日峰值 / 降水概率 / AQI / 风向风速 |
+| 地理 | 紫 | 经纬度 / 海拔 / 所在区 / 日出 · 日落 |
+| AGENDA | 蓝 | 今天·明天事件数，正在进行的显示结束时间，否则显示下一个的实时倒计时；明天的事件以 `+` 前缀 |
+| TODO | 橙 | 未完成提醒，逾期与高优先级标红并显示逾期天数 |
+| 月历 | 蓝 | ISO 周号 + 当月网格，有日程的日期加粗变蓝，今天反白 |
+| MKT | 随时段变色 | 行情，见下节 |
+| 活动 | 洋红 | 三圆环 + 步数 / 距离（需要快捷指令桥接） |
+| 底栏 | 绿 / 灰 | 公网 IP · 运营商 · VPN 判定 · Gmail 未读 · 脚本上次运行时间 ／ WiFi 名 · 内网 IP · 数据 SIM · 制式 · 闹钟 |
+
+**颜色是语义，不是装饰：**
+
+| 颜色 | 含义 |
 |---|---|
-| `GeekBoard.js` | Widget 脚本本体，放进 iCloud Drive/Scriptable/ |
-| `geekboard-bridge.sample.json` | 快捷指令桥接文件样例（第 3 节） |
-| `tools/mock_run.js` | Node 端 Scriptable 运行时 mock，改布局时可在电脑上跑通逻辑：`node tools/mock_run.js` |
-| `tools/preview.html` | 预览图的 HTML 源，改版式时用它出图 |
-| `tools/gen_lunar.py` | 生成内置农历表的脚本（依赖 `pip install sxtwl`），仅在需要扩展年份范围时使用 |
+| 绿 | 正在进行的日程、盘中、空气优良 |
+| 蓝 | 下一个日程、有事件的日期、湿度、所在区 |
+| 红 | 逾期 / 高优先级 / 涨（可切换） |
+| 橙 | 今天正好是节气、TODO 区块、日落 |
+| 琥珀 | VPN ON、UV 偏高、数据过期告警、盘前 |
+| 紫 | 盘后、定位 |
+| 灰 | 已过去 / 休市 / 次要信息 |
 
+涨跌默认**红涨绿跌**，改 `CN_COLOR_CONVENTION: false` 切换为绿涨红跌。
 
-## 0. 一图读懂布局
+**图标**全部用 SF Symbols。脚本对每个符号做了存在性检查——旧版 iOS 上缺失的符号会自动退回文字标签（例如 `aqi.medium` 缺失时显示 `AQI`），不会崩。不想要图标就设 `SHOW_ICONS: false`，退化成纯文字版。不想要区块底色就设 `SHOW_SECTION_TINT: false`。
 
-```
-TUE 25 AUG  W35 D237  丙午马 七月十三  白露-13d        ← 周几/日期/ISO周/年内第几天/干支农历/下一个节气倒数
-☁ 31° ~34° 26/33 H68% UV7/9 P10% AQI42 SE3m/s         ← 天气/体感/今日低高/湿度/UV当前÷最高/降水概率/空气/风
-35.6812N 139.7671E ↑41m 丸の内 ☀05:07-18:22          ← 经纬度/海拔/所在区/日出-日落
-──────────────────────────────────────────────────
-AGENDA 7·2 ▶14:45          wk M T W T F S S           ← 今天·明天事件数；▶正在进行的结束时间 / →下一个倒计时
-ALL   Deploy freeze  Person 35 24 [25] 26 27 28 29 30   ← 月历：ISO 周号 + 有事件的日期高亮
-09:30 Standup         30m  AAPL   232.14 +1.23
-14:00 1:1 Kenji       45m  BTC   112,341 -0.83        ← 行情：价格 + 涨跌%
-+08:00 Board prep      1h  ◎ M 412/500 E 22/30 S 8/12  ← 三圆环 + 步数/距离（需要快捷指令桥接）
-TODO 4·1!                     6,842 4.9km
-! Pay rent            -2d                             ← 逾期/高优先级红色
-• Call bank          17:00
-──────────────────────────────────────────────────
-203.0.113.5 KDDI JP VPN OFF                  BAT 84%  ← 公网IP/运营商/国家/VPN 判定/电量
-HomeNet-5G 192.168.1.23 KDDI 5G ⏰06:30       ↻14:32  ← WiFi名/内网IP/数据SIM/制式/闹钟/脚本上次运行时间
-```
-
-颜色语义（不是装饰）：绿 = 正在进行 / 充电中 / 空气优；蓝 = 下一个事件、有事件的日期、所在区；红 = 逾期、高优先级、低电量；琥珀 = VPN ON、UV 高、数据过期 `!`、今天正好是节气；灰 = 已过去 / 次要。涨跌默认**红涨绿跌**（`CN_COLOR_CONVENTION`）。
-
-## 1. 安装脚本（2 分钟）
+## 安装
 
 1. App Store 安装 **Scriptable**。
-2. 把 `GeekBoard.js` 放进 iCloud Drive → `Scriptable` 文件夹（或在 Scriptable 里新建脚本，把内容整个粘进去，命名 `GeekBoard`）。
-3. 在 Scriptable 里点一下运行，按提示允许 **日历 / 提醒事项 / 定位** 权限。
-4. 桌面长按 → 添加 Widget → Scriptable → **大号** → 长按 Widget → 编辑 → Script 选 `GeekBoard`，When Interacting 选 `Run Script`。
-5. 设置 → Scriptable → 位置 → 选 **始终**（Widget 在后台刷新时才能定位；脚本用的是公里级精度 + 30 分钟缓存，几乎不耗电）。
+2. 把 `GeekBoard.js` 放进 iCloud Drive → `Scriptable` 文件夹（或在 App 内新建脚本粘贴内容，命名 `GeekBoard`）。
+3. 在 Scriptable 内运行一次，按提示授予 **日历 / 提醒事项 / 定位** 权限。
+4. 桌面长按 → 添加小组件 → Scriptable → **大号** → 长按小组件 → 编辑 → Script 选 `GeekBoard`，When Interacting 选 `Run Script`。
+5. 设置 → Scriptable → 位置 → 选 **始终**（后台刷新时才能定位；脚本用公里级精度 + 30 分钟缓存，耗电可忽略）。
 
-## 2. 改配置（脚本顶部 `CONFIG`）
+## 配置
+
+全部在脚本顶部 `CONFIG` 里。
 
 | 项 | 说明 |
 |---|---|
 | `STOCKS` | Yahoo 代码：美股 `AAPL`；港股 `0700.HK`；A 股 `600519.SS` / `000001.SZ`；日股 `7203.T`；指数 `^GSPC` `^N225`；汇率 `USDJPY=X` |
-| `CRYPTO` | Binance 现货代码（自动加 USDT）。Binance 不通时自动切 CoinGecko，用 `CRYPTO_GECKO_IDS` 映射 |
-| `QUOTE_ROWS` | 行情显示行数，股票在前币在后，超出截断 |
+| `CRYPTO` | Binance 现货代码（自动加 USDT）。Binance 不通时切 CoinGecko，映射见 `CRYPTO_GECKO_IDS` |
+| `QUOTE_ROWS` | 行情总行数，股票在前币在后 |
+| `EXTENDED_HOURS` | `true` 取盘前/盘后（每只股票 1 次请求）；`false` 用批量接口（总共 1 次请求，但没有盘前盘后） |
+| `CN_COLOR_CONVENTION` | 红涨绿跌 / 绿涨红跌 |
 | `CALENDARS` / `CALENDARS_EXCLUDE` | 按日历名称过滤 |
-| `REMINDER_LISTS` | 指定提醒事项列表名。留空 = 所有列表里 7 天内到期 + 逾期；指定了列表后无日期的项也会显示 |
-| `TRUSTED_ISP` | 填你家宽带和手机运营商名字片段，如 `["KDDI","SoftBank","NTT"]`。出口 IP 不属于这些 → 判定 VPN ON。留空则只靠 ip-api 的机房/代理标记判定 |
-| `GMAIL` | 想要 Gmail 未读数时填 Google 应用专用密码（账号 → 安全性 → 两步验证 → 应用专用密码）。走 Atom feed，一次请求 |
-| `WIDTH` | iPhone 15/16 Pro 用 `314`；Plus / Pro Max 改 `340`；iPhone 16 Pro Max 也是 `340` |
-| `FONT` | 主字号，默认 12。改大一号请把 `LEFT_LINES` 减 1~2 |
+| `REMINDER_LISTS` | 指定提醒列表名。留空 = 所有列表里 7 天内到期 + 逾期；指定后无日期的项也会显示 |
+| `TRUSTED_ISP` | 填你家宽带和手机运营商名字片段，如 `["KDDI","SoftBank","NTT"]`。出口 IP 不属于这些 → 判定 VPN ON。留空则只靠 ip-api 的机房/代理标记 |
+| `GMAIL` | 填 Google 应用专用密码（账号 → 安全性 → 两步验证 → 应用专用密码）即可显示未读数，走 Atom feed，一次请求 |
+| `AUTO_SIZE` | 默认 `true`，按机型自动适配。设 `false` 则用 `FALLBACK_W/H` |
+| `RIGHT_RATIO` | 右栏占宽比例，默认 `0.46`。日程标题老被截断就调小 |
+| `SHOW_ICONS` / `SHOW_SECTION_TINT` | 图标 / 区块底色开关 |
+| `SHOW_PRESSURE` | 第三行加气压 hPa（地名短的时候放得下） |
 | `USE_GPS` | `false` 则完全不定位，用 `FALLBACK_COORDS` |
-| `TTL` | 各数据源缓存分钟数。iOS 刷新 Widget 时若缓存未过期就不发网络请求 |
+| `TTL` / `TTL_QUOTES` | 各数据源缓存分钟数 |
+| `BLOCK_PAD_V` | 区块上下内边距（在 CONFIG 下方）。调大更松散，但会吃掉左栏行数 |
 
-## 3. 快捷指令桥接（拿三圆环 / 步数 / WiFi / 内网 IP / SIM / 闹钟）
+## 行情：盘前 / 盘中 / 盘后 / 休市
 
-iOS 不让第三方 App 直接读这些，但「快捷指令」可以。原理：一个快捷指令把数据写成 JSON 文件到 iCloud 的 Scriptable 目录，Widget 每次刷新读取它。
+数据取自 Yahoo 的 chart 接口，响应里的 `currentTradingPeriod` 给出了该交易所当日 pre / regular / post 三段的起止时间戳，所以时段是**本地算出来的，不额外发请求**。
 
-### 3.1 新建快捷指令 `GeekBoard Bridge`
+每行左侧的图标就是该标的当前所处的时段：
 
-按顺序添加动作（括号内是每个动作的设置）：
+| 时段 | 图标 | 颜色 | 显示的价格与百分比 |
+|---|---|---|---|
+| 盘中 OPEN | ● 实心圆 | 绿 | 现价 + 当日涨跌幅 |
+| 盘前 PRE | ☀ 日出 | 琥珀 | **盘前价** + 相对前收的涨跌幅 |
+| 盘后 POST | ☾ 月亮 | 紫 | 收盘价 + 当日涨跌幅，**再附一个盘后变动**（第二个百分数，1 位小数） |
+| 休市 CLOSED | ⏸ 暂停 | 灰 | 最后收盘价 + 当日涨跌幅，**整行灰显**，涨跌色也降饱和 |
+| 加密货币 | ⚡ 闪电 | 青 | 现价 + 24h 涨跌幅（7×24 无时段概念） |
 
-1. **查找健康样本** (类型 `活动能量`，筛选 `开始日期 是 今天`，分组 无) → **计算统计** (总和) → 结果命名 `move`
-2. **查找健康样本** (类型 `锻炼时间`，今天) → **计算统计** (总和) → `exercise`
-3. **查找健康样本** (类型 `站立小时数`，今天) → **计算统计** (总和) → `stand`
-4. **查找健康样本** (类型 `步数`，今天) → **计算统计** (总和) → `steps`
-5. **查找健康样本** (类型 `步行 + 跑步距离`，今天) → **计算统计** (总和) → `distance`
-6. **获取网络详细信息** (Wi-Fi → 网络名称) → `ssid`
-7. **获取当前 IP 地址** (本地, Wi-Fi) → `lanIp`
-8. **获取网络详细信息** (蜂窝 → 运营商名称) → `carrier`；再加一个 (蜂窝 → 无线技术 / 网络类型) → `radio`
-9. （可选，iOS 17+）时钟 App 的 **获取闹钟** → 筛选 `已启用`，按时间排序 → 取第一项 → **设定格式** 得到 `HH:mm` → `alarm`。你的系统里如果搜不到这个动作就跳过。
-10. **文本**，内容如下（把 `{…}` 换成上面各步的变量，**全部加引号**，脚本会自己去单位和逗号）：
+MKT 区块标题右侧还会用文字重复一遍当前时段（`OPEN` / `PRE` / `POST` / `CLOSED`），区块底色也跟着变——休市时整块转灰，扫一眼就知道数字是不是活的。
+
+标题上的时段取第一只股票所在交易所；如果你同时放了美股和港股，各行的图标仍然是各自正确的。
+
+## 尺寸自适应
+
+`Device.screenSize()` 查表得到该机型的大号 Widget 尺寸，再由宽度推导字号、左右分栏、月历格宽和左栏行数。已收录的机型：
+
+| 屏幕 | 机型 | Widget | 字号 | 左栏行数 |
+|---|---|---|---|---|
+| 440×956 | 16 Pro Max | 382×406 | 13.6 | 17 |
+| 430×932 | 15/16 Pro Max, 15/16 Plus | 364×382 | 12.9 | 16 |
+| 402×874 | 16 Pro | 348×371 | 12.3 | 16 |
+| 393×852 | 14 Pro, 15, 15 Pro, 16 | 338×354 | 11.9 | 16 |
+| 390×844 | 12/13/13 Pro, 14 | 338×354 | 11.9 | 16 |
+| 414×896 | XR, XS Max, 11 | 360×379 | 12.8 | 16 |
+| 375×812 | X, XS, 11 Pro, 12/13 mini | 329×345 | 11.6 | 16 |
+| 375×667 | SE2 / SE3 | 321×324 | 11.3 | 15 |
+| 320×568 | SE1 | 292×311 | 10.5 | 15 |
+
+表里没有的机型按「大号 Widget 宽 ≈ 屏宽 86%」估算，误差 ±2%，配合文字的最小缩放比例不会溢出。字号钳在 10.5–14 之间，所以再小的屏也不会缩到看不清。
+
+## 快捷指令桥接
+
+iOS 不让第三方 App 读健康数据、WiFi 名、内网 IP、SIM 信息，但「快捷指令」可以。原理：一个快捷指令把这些写成 JSON 到 iCloud 的 Scriptable 目录，Widget 每次刷新读它。
+
+### 新建快捷指令 `GeekBoard Bridge`
+
+按顺序添加动作：
+
+1. **查找健康样本**（类型 `活动能量`，筛选 `开始日期 是 今天`）→ **计算统计**（总和）→ 命名 `move`
+2. 同上，类型 `锻炼时间` → `exercise`
+3. 同上，类型 `站立小时数` → `stand`
+4. 同上，类型 `步数` → `steps`
+5. 同上，类型 `步行 + 跑步距离` → `distance`（若返回米，接一个「计算 ÷1000」，脚本按 km 显示）
+6. **获取网络详细信息**（Wi-Fi → 网络名称）→ `ssid`
+7. **获取当前 IP 地址**（本地, Wi-Fi）→ `lanIp`
+8. **获取网络详细信息**（蜂窝 → 运营商名称）→ `carrier`；再来一个（蜂窝 → 无线技术）→ `radio`
+9. （可选，iOS 17+）**获取闹钟** → 筛选「已启用」→ 按时间排序 → 取第一项 → **设定格式** 成 `HH:mm` → `alarm`。搜不到这个动作就跳过。
+10. **文本**，内容如下（`{…}` 换成上面各步的变量，**全部加引号**，脚本会自己去掉单位和千分位逗号）：
 
 ```json
 {"move":"{move}","exercise":"{exercise}","stand":"{stand}","steps":"{steps}","distance":"{distance}",
  "ssid":"{ssid}","lanIp":"{lanIp}","carrier":"{carrier}","radio":"{radio}","alarm":"{alarm}"}
 ```
 
-11. **存储文件**：服务 `iCloud Drive`，关闭「询问存储位置」，路径填 `Scriptable/geekboard-bridge.json`，打开「如果文件存在则覆盖」。
+11. **存储文件**：服务 `iCloud Drive`，关闭「询问存储位置」，路径 `Scriptable/geekboard-bridge.json`，打开「如果文件存在则覆盖」。
 
-跑一次，去「文件」App 的 iCloud Drive/Scriptable 里确认有 `geekboard-bridge.json`。距离如果返回的是米，在 `distance` 后面接一个「计算 ÷1000」即可（脚本按 km 显示）。
+跑一次，去「文件」App 确认 iCloud Drive/Scriptable/ 下有 `geekboard-bridge.json`。样例见 [`geekboard-bridge.sample.json`](geekboard-bridge.sample.json)。
 
-圆环目标（`MOVE_GOAL` 等）快捷指令拿不到，在 CONFIG 里手填；或者在 JSON 里加 `"moveGoal":"500"` 覆盖。
+圆环目标快捷指令拿不到，在 CONFIG 里手填 `MOVE_GOAL` 等；或在 JSON 里加 `"moveGoal":"500"` 覆盖。
 
-### 3.2 让它自动跑
+### 自动化
 
-快捷指令 → 自动化 → 新建「个人自动化」，每条都选 **立即运行**、关掉「运行时通知」：
+快捷指令 → 自动化 → 新建个人自动化，每条都选 **立即运行** 并关掉「运行时通知」：
 
-- **特定时间**：分别建 7:00 / 9:00 / 12:00 / 15:00 / 18:00 / 21:00 / 23:00 各一条（iOS 不支持"每小时"，只能多建几条）
-- **App**：`健身` 关闭时（看完圆环顺手刷新）
+- **特定时间**：7:00 / 9:00 / 12:00 / 15:00 / 18:00 / 21:00 / 23:00 各建一条（iOS 不支持「每小时」）
+- **App**：`健身` 关闭时
 - **充电器**：连接时
-- **Wi-Fi**：加入任意网络时（这样 SSID / 内网 IP 换网就更新）
+- **Wi-Fi**：加入任意网络时（换网时刷新 SSID / 内网 IP）
 
-每条自动化都指向 `GeekBoard Bridge`。桥接数据超过 `BRIDGE_STALE_HOURS`（默认 4 小时）未更新，Widget 会把这些字段灰显并在底栏标 `bridge Nh`。
+全部指向 `GeekBoard Bridge`。桥接数据超过 `BRIDGE_STALE_HOURS`（默认 4 小时）没更新，相关字段会灰显并在底栏标 `stale Nh`。
 
-## 4. 省电说明
+## 省电
 
-- Widget 何时刷新由 iOS 决定（通常 15~30 分钟一次，脚本用 `REFRESH_MIN` 给它一个建议值）。
-- 每次刷新最多 5 个网络请求（天气、AQI、行情、币、IP），且都受 TTL 缓存约束；行情 5 分钟内、天气 20 分钟内、IP 30 分钟内重复刷新不会再发请求。
-- 定位用公里级精度并缓存 30 分钟；不做持续定位。
-- 没有任何动画 / 大图 / 持续运行的东西。实际功耗与系统自带天气 Widget 同一量级。
+- 刷新时机由 iOS 决定（通常 15~30 分钟一次），`REFRESH_MIN` 只是给系统的建议值。
+- 冷启动最多 7 个网络请求（3 股票 + 币 + 天气 + AQI + IP），之后全部走 TTL 缓存。
+- **行情缓存随交易时段自动伸缩**：盘中 5 分钟、盘前盘后 15 分钟、休市 **120 分钟**。夜里和周末基本不发行情请求。
+- 定位公里级精度 + 30 分钟缓存，不做持续定位。
+- 无动画、无大图、无后台常驻。整体功耗与系统自带天气 Widget 同一量级。
 
-## 5. 数据源与失效行为
+缓存热之后，距上次刷新 N 分钟时实际发出的请求数（实测，非估算）：
+
+| 时段 | +0m | +6m | +25m | +65m | +130m |
+|---|---|---|---|---|---|
+| 盘中 OPEN | 0 | 3 | 5 | 7 | 7 |
+| 盘后 POST | 0 | 0 | 5 | 7 | 7 |
+| 休市 CLOSED | 0 | 0 | **2** | **4** | 7 |
+
+按 iOS 常见的 15~30 分钟刷新节奏，盘中每次 3~5 个请求，休市时只有 2 个（天气 + 币）。这张表可以自己复现：
+
+```bash
+rm -f /tmp/c.json
+CACHE=/tmp/c.json SESSION=CLOSED node tools/mock_run.js        # 冷启动，填满缓存
+CACHE=/tmp/c.json SESSION=CLOSED SKEW=25 node tools/mock_run.js  # 25 分钟后再刷一次
+```
+
+嫌请求还是多就把 `EXTENDED_HOURS` 设成 `false`——所有股票合并成 1 次请求（冷启动共 5 个），代价是没有盘前盘后数据。
+
+## 数据源与失效行为
 
 | 数据 | 来源 | 失败时 |
 |---|---|---|
-| 天气 / 日出日落 / UV / 气压 | Open-Meteo（免 key） | 用上次缓存并标 `!`；没缓存显示 `WX --` |
+| 天气 / 日出日落 / UV / 气压 | Open-Meteo（免 key） | 用上次缓存并标 ⚠；没缓存显示 `weather unavailable` |
 | AQI | Open-Meteo Air Quality | 不显示 |
-| 股票 | Yahoo Finance `spark`，逐只 `chart` 兜底 | 缓存 + `mkt cached HH:mm` |
+| 股票 | Yahoo chart（含 `includePrePost`），失败回退 spark 批量接口 | 缓存 + `cached HH:mm` |
 | 加密货币 | Binance 24hr → CoinGecko 兜底 | 同上 |
-| 公网 IP / ISP / VPN | ip-api.com（含机房/代理标记）→ ipapi.co 兜底 | `NET --` |
-| 农历 / 节气 | 脚本内置 2000–2100 精确表（天文历法生成，逐日校验过） | 无网络依赖 |
-| 三圆环 / 步数 / WiFi / SIM / 闹钟 | 快捷指令桥接文件 | 显示 `no bridge` / `RINGS: no bridge` |
+| 公网 IP / ISP / VPN | ip-api.com（含机房/代理标记）→ ipapi.co 兜底 | 显示 `offline` |
+| 农历 / 节气 | 脚本内置 2000–2100 精确表（天文历法生成，逐日校验） | 无网络依赖 |
+| 三圆环 / 步数 / WiFi / SIM / 闹钟 | 快捷指令桥接文件 | 显示 `no bridge` |
 
-## 6. iOS 拿不到、所以没放的东西
+## iOS 拿不到的东西
 
-微信未读、短信未读、耳机电量、指南针朝向、网关地址。任何第三方 App（包括快捷指令）都读不到这些，Widget 里不放假数据占位。
+微信未读、短信未读、耳机电量、指南针朝向、网关地址。任何第三方 App（包括快捷指令）都读不到，Widget 里不放假数据占位。
 
-## 7. 排错
+电池也移除了——iPhone 状态栏右上角本来就一直显示，重复即无效信息。
 
-- Widget 一片空白 / 只剩一行：多半是某个权限没给。在 Scriptable App 内运行脚本一次，看控制台报错。
-- 行情全是 `--`：Yahoo 偶尔限流，等 5 分钟；或者代码写错（Yahoo 网页搜索一下确认代码）。
-- 经纬度是灰色的：定位失败，正在用 `FALLBACK_COORDS`。检查 Scriptable 定位权限是否为「始终」。
-- 圆环不显示：确认「文件」里 iCloud Drive/Scriptable/geekboard-bridge.json 存在且内容是合法 JSON（所有值都加引号）。
+## 排错
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| 一片空白或只剩一行 | 某个权限没给。在 Scriptable 内运行一次看控制台报错 |
+| 行情全是 `--` | Yahoo 偶尔限流，等几分钟；或代码写错（去 Yahoo 网页确认） |
+| 经纬度灰色 | 定位失败，正在用 `FALLBACK_COORDS`。检查 Scriptable 定位权限是否为「始终」 |
+| 圆环不显示 | 确认 iCloud Drive/Scriptable/geekboard-bridge.json 存在且是合法 JSON（所有值都加引号） |
+| 内容偏窄 / 右边留白 | 机型不在尺寸表里，走了估算。把实测尺寸填进 `WIDGET_SIZES` 或用 `AUTO_SIZE:false` + `FALLBACK_W/H` |
+| 日程标题截断太多 | 调小 `RIGHT_RATIO`（如 0.42） |
+| 图标显示成文字 | 该 SF Symbol 在你的 iOS 版本里不存在，这是预期的回退行为 |
+
+## 本地开发
+
+改布局前先在电脑上跑一遍，比传手机上试快得多：
+
+```bash
+node tools/mock_run.js                      # 默认盘中
+SESSION=POST node tools/mock_run.js         # 盘后
+SESSION=CLOSED SCREEN=320x568 node tools/mock_run.js   # 休市 + SE1
+OFFLINE=1 NOLOC=1 EMPTY=1 BRIDGE=0 node tools/mock_run.js   # 全部数据源失效
+NOSYM=1 node tools/mock_run.js              # 所有 SF Symbol 缺失，验证文字回退
+CACHE=/tmp/c.json SKEW=25 node tools/mock_run.js       # 持久化缓存 + 拨快时钟，验证 TTL
+```
+
+`tools/mock_run.js` 模拟了 Scriptable 运行时（含 `Device.screenSize`、`SFSymbol`、日历、提醒、网络），打印文本版的 Widget 树并在末尾报告实际发出的请求数。
+`tools/preview.html` 是预览图的 HTML 源，`tools/gen_lunar.py` 用于重新生成农历表（需 `pip install sxtwl`）。
