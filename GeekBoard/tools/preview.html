@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;background:#1c1f26;}
+  body{display:flex;align-items:center;justify-content:center;width:420px;height:440px;background:linear-gradient(160deg,#2b2f3a,#12141a);}
+  .w{width:338px;height:354px;box-sizing:border-box;border-radius:22px;background:#0b0f14;padding:9px 12px 7px 12px;
+     font-family:"DejaVu Sans Mono","Noto Sans CJK JP",monospace;font-size:12px;color:#e6edf3;display:flex;flex-direction:column;overflow:hidden;
+     box-shadow:0 10px 30px rgba(0,0,0,.5);}
+  .row{display:flex;align-items:center;gap:5px;white-space:nowrap;line-height:15px}
+  .r1{gap:6px}
+  .b{font-weight:bold}.dim{color:#7d8590}.faint{color:#3d444d}.blue{color:#58a6ff}.green{color:#3fb950}.red{color:#f85149}.amber{color:#d29922}.purple{color:#bc8cff}
+  .sp{flex:1}
+  .hl{height:1px;background:#21262d;margin:3px 0}
+  .body{display:flex;align-items:flex-start;flex:1}
+  .left{width:176px;display:flex;flex-direction:column;gap:1px}
+  .right{width:130px;display:flex;flex-direction:column;gap:1px;margin-left:8px}
+  .sm{font-size:10.5px}
+  .ev{display:flex;gap:4px;align-items:center;line-height:15px;white-space:nowrap}
+  .ev .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .grid{display:flex}
+  .grid div{width:16px;height:13px;font-size:9.5px;text-align:center;line-height:13px}
+  .today{background:#e6edf3;color:#0b0f14;border-radius:3px;font-weight:bold}
+  .q{display:flex;gap:3px;align-items:center;font-size:10.5px;line-height:14px}
+  .clock{font-size:13px;font-weight:bold}
+  .sun{color:#d29922}
+  .ft{font-size:11px}
+  .rings{display:flex;gap:5px;align-items:center}
+  .rings .txt{display:flex;flex-direction:column;font-size:10.5px;line-height:12px}
+</style></head><body>
+<div class="w">
+  <div class="row r1"><span class="b">TUE 25 AUG</span><span class="dim">W35 D237</span><span class="amber">丙午马 七月十三</span><span class="dim">白露-13d</span></div>
+  <div class="row"><svg width="14" height="14" viewBox="0 0 24 24" fill="#e6edf3"><circle cx="9" cy="9" r="4.5" fill="#d29922"/><path d="M7 20a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 11.5a3.5 3.5 0 0 1 .5 6.97L17 20H7z"/></svg><span class="b">31°</span><span class="dim">~34°</span><span>26/33</span><span>H68%</span><span class="amber">UV7/9</span><span>P10%</span><span class="green">AQI42</span><span class="dim">SE3m/s</span></div>
+  <div class="row"><span>35.6812N 139.7671E</span><span>↑41m</span><span class="blue">丸の内</span><span class="dim">☀05:07-18:22</span></div>
+  <div class="hl"></div>
+  <div class="body">
+    <div class="left">
+      <div class="ev sm"><span class="b dim">AGENDA</span><span class="dim">7·2</span><span class="green">▶14:45</span></div>
+      <div class="ev"><span class="faint">ALL  </span><span class="t dim">Deploy freeze</span><span class="sp"></span><span class="sm faint">Person</span></div>
+      <div class="ev"><span class="faint">09:30</span><span class="t dim">Standup</span><span class="sp"></span><span class="sm faint">30m</span></div>
+      <div class="ev"><span class="faint">11:00</span><span class="t dim">Design review w/ platform</span><span class="sp"></span><span class="sm faint">1h</span></div>
+      <div class="ev"><span class="green">14:00</span><span class="t green">1:1 Kenji</span><span class="sp"></span><span class="sm faint">45m</span></div>
+      <div class="ev"><span class="blue">16:30</span><span class="t blue">Dentist</span><span class="sp"></span><span class="sm faint">1h</span></div>
+      <div class="ev"><span>19:00</span><span class="t">Dinner @ Ginza</span><span class="sp"></span><span class="sm faint">2h</span></div>
+      <div class="ev"><span>21:00</span><span class="t">Late sync</span><span class="sp"></span><span class="sm faint">30m</span></div>
+      <div class="ev"><span class="dim">+08:00</span><span class="t dim">Board prep</span><span class="sp"></span><span class="sm faint">1h</span></div>
+      <div class="ev"><span class="dim">+10:15</span><span class="t dim">Flight HND-SFO</span><span class="sp"></span><span class="sm faint">10h</span></div>
+      <div class="ev sm"><span class="b dim">TODO</span><span class="red">4·1!</span></div>
+      <div class="ev"><span class="b red">!</span><span class="t red">Pay rent</span><span class="sp"></span><span class="sm red">-2d</span></div>
+      <div class="ev"><span class="b faint">•</span><span class="t">Call bank</span><span class="sp"></span><span class="sm faint">17:00</span></div>
+      <div class="ev"><span class="b faint">•</span><span class="t dim">Buy milk</span><span class="sp"></span><span class="sm faint">8/26</span></div>
+      <div class="ev"><span class="b faint">•</span><span class="t dim">Renew passport</span><span class="sp"></span><span class="sm faint">8/28</span></div>
+    </div>
+    <div class="right">
+      <div class="grid"><div class="faint">wk</div><div class="dim b">M</div><div class="dim b">T</div><div class="dim b">W</div><div class="dim b">T</div><div class="dim b">F</div><div class="faint b">S</div><div class="faint b">S</div></div>
+      <div class="grid"><div class="faint">31</div><div class="faint">27</div><div class="faint">28</div><div class="faint">29</div><div class="faint">30</div><div class="faint">31</div><div class="dim">1</div><div class="dim">2</div></div>
+      <div class="grid"><div class="faint">32</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div class="dim">8</div><div class="dim">9</div></div>
+      <div class="grid"><div class="faint">33</div><div>10</div><div class="blue b">11</div><div>12</div><div>13</div><div>14</div><div class="dim">15</div><div class="dim">16</div></div>
+      <div class="grid"><div class="faint">34</div><div>17</div><div>18</div><div class="blue b">19</div><div>20</div><div>21</div><div class="dim">22</div><div class="dim">23</div></div>
+      <div class="grid"><div class="dim">35</div><div>24</div><div class="today">25</div><div>26</div><div>27</div><div class="blue b">28</div><div class="blue b">29</div><div class="blue b">30</div></div>
+      <div class="grid"><div class="faint">36</div><div>31</div><div class="faint">1</div><div class="faint">2</div><div class="faint">3</div><div class="faint">4</div><div class="faint">5</div><div class="faint">6</div></div>
+      <div style="height:4px"></div>
+      <div class="q"><span class="b">AAPL</span><span class="sp"></span><span>232.14</span><span class="b red">+1.23</span></div>
+      <div class="q"><span class="b">NVDA</span><span class="sp"></span><span>181.60</span><span class="b green">-1.41</span></div>
+      <div class="q"><span class="b">TSLA</span><span class="sp"></span><span>351.20</span><span class="b red">+3.29</span></div>
+      <div class="q"><span class="b">BTC</span><span class="sp"></span><span>112,341</span><span class="b green">-0.83</span></div>
+      <div class="q"><span class="b">ETH</span><span class="sp"></span><span>4,312.1</span><span class="b red">+2.15</span></div>
+      <div style="height:4px"></div>
+      <div class="rings">
+        <svg width="42" height="42" viewBox="0 0 42 42">
+          <g fill="none" stroke-width="4.5" transform="rotate(-90 21 21)">
+            <circle cx="21" cy="21" r="18" stroke="#fa114f" stroke-opacity=".18"/><circle cx="21" cy="21" r="18" stroke="#fa114f" stroke-dasharray="113.1" stroke-dashoffset="19.9"/>
+            <circle cx="21" cy="21" r="12.5" stroke="#92e82a" stroke-opacity=".18"/><circle cx="21" cy="21" r="12.5" stroke="#92e82a" stroke-dasharray="78.5" stroke-dashoffset="20.9"/>
+            <circle cx="21" cy="21" r="7" stroke="#00d8ff" stroke-opacity=".18"/><circle cx="21" cy="21" r="7" stroke="#00d8ff" stroke-dasharray="44" stroke-dashoffset="14.7"/>
+          </g></svg>
+        <div class="txt"><span><b style="color:#fa114f">M</b> 412/500</span><span><b style="color:#92e82a">E</b> 22/30</span><span><b style="color:#00d8ff">S</b> 8/12</span><span>6,842 <span class="dim">4.9km</span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="hl"></div>
+  <div class="row ft"><span>203.0.113.5</span><span class="dim">KDDI JP</span><span class="b dim">VPN OFF</span><span class="sp"></span><span class="b">BAT 84%</span></div>
+  <div class="row ft"><span class="dim">HomeNet-5G 192.168.1.23</span><span class="dim">KDDI 5G</span><span>⏰06:30</span><span class="sp"></span><span class="faint">↻14:32</span></div>
+</div>
+</body></html>
