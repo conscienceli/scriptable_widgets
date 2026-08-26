@@ -59,6 +59,8 @@ const CONFIG = {
   SHOW_ICONS: true,                          // 关掉则纯文字（更省一点，但辨识度低）
   SHOW_SECTION_TINT: true,                   // 区块底色分区
   SHOW_DAY_BAR: true,                        // 顶部一天的进度条（白昼段 + 当前时刻游标）
+  SHOW_HOURLY_RAIN: true,                    // 进度条下挂一条今天逐小时降雨概率（蓝色深浅），零额外请求
+  SHOW_SPARKLINES: true,                     // 股票行画两日迷你走势线（复用行情请求，零额外请求）
   SHOW_NOW_LINE: true,                       // 日程里插一条「现在」分隔线
   SHOW_WIFI: true,                           // 底栏显示 WiFi 名（需要桥接）
   SHOW_SIM: true,                            // 底栏显示数据 SIM 运营商与制式（需要桥接）
@@ -89,7 +91,8 @@ function widgetSize() {
 const WSZ = widgetSize();
 const PAD_X = 11, PAD_TOP = 8, PAD_BOT = 6;
 const BLOCK_PAD_V = 1;          // 区块上下内边距，直接吃掉纵向空间，改大之前先看 leftLines
-const DAY_BAR_H = 5;            // 顶部进度条高度
+const DAY_BAR_H = 9;            // 顶部进度条高度（含降雨条；SHOW_HOURLY_RAIN 关掉后自动回落）
+const DAY_BAR_SUN_H = 5;
 const LAY = (() => {
   const W = WSZ.w - PAD_X * 2;
   const font = Math.max(10.5, Math.min(14, W / 26.5));
@@ -102,7 +105,8 @@ const LAY = (() => {
   const stackGap = 2;
   const stripH = lineH + blockV;                 // 顶部三个横条各自的高度
   const footH = (font - 1.5) * 1.27 + blockV;    // 底栏（只剩一行）
-  const barH = CONFIG.SHOW_DAY_BAR ? DAY_BAR_H + stackGap : 0;
+  const dayBarH = CONFIG.SHOW_HOURLY_RAIN ? DAY_BAR_H : DAY_BAR_SUN_H;
+  const barH = CONFIG.SHOW_DAY_BAR ? dayBarH + stackGap : 0;
   // TODO 区块在不在要等数据回来才知道，所以 chrome 做成函数、渲染时再算
   const bodyH = () => WSZ.h - PAD_TOP - PAD_BOT - stripH * 3 - footH - barH - stackGap * 4;
   const linesFor = (hasTodo) =>
@@ -191,7 +195,7 @@ function withTimeout(promise, ms) {
 // ---- cache ----
 // 缓存里存的对象结构一变，旧缓存就会以错误的形态被渲染（例如缺 session 字段的行情被当成盘中）。
 // 所以带一个 schema 版本号，对不上就当作没有缓存。改动任何被缓存对象的字段时，把这个数字 +1。
-const CACHE_SCHEMA = 2;
+const CACHE_SCHEMA = 3;
 const fm = FileManager.local();
 const CACHE_DIR = fm.joinPath(fm.documentsDirectory(), "geekboard-cache");
 if (!fm.fileExists(CACHE_DIR)) fm.createDirectory(CACHE_DIR, true);
@@ -313,7 +317,8 @@ async function getPlace(loc) {
 async function getWeather(loc) {
   const q = "latitude=" + loc.lat.toFixed(4) + "&longitude=" + loc.lon.toFixed(4) +
     "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,uv_index,precipitation,is_day,pressure_msl" +
-    "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,precipitation_sum&timezone=auto&forecast_days=1" +
+    "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,precipitation_sum" +
+    "&hourly=precipitation_probability&timezone=auto&forecast_days=1" +
     (CONFIG.UNITS_METRIC ? "" : "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch");
   return await cached("wx", CONFIG.TTL.weather, async () => {
     const j = await getJSON("https://api.open-meteo.com/v1/forecast?" + q);
@@ -321,7 +326,8 @@ async function getWeather(loc) {
     return { t: c.temperature_2m, feel: c.apparent_temperature, rh: c.relative_humidity_2m, code: c.weather_code, day: c.is_day,
       wind: c.wind_speed_10m, wdir: c.wind_direction_10m, uv: c.uv_index, precip: c.precipitation, pres: c.pressure_msl,
       tmax: d.temperature_2m_max[0], tmin: d.temperature_2m_min[0], sunrise: d.sunrise[0], sunset: d.sunset[0],
-      uvmax: d.uv_index_max[0], pop: d.precipitation_probability_max[0], psum: d.precipitation_sum[0], elev: j.elevation };
+      uvmax: d.uv_index_max[0], pop: d.precipitation_probability_max[0], psum: d.precipitation_sum[0], elev: j.elevation,
+      hourlyPop: (j.hourly && j.hourly.precipitation_probability) || null };
   });
 }
 async function getAQI(loc) {
@@ -376,6 +382,14 @@ function parseChart(sym, j, nowSec) {
       }
     }
   }
+  // 走势线只要形状，不要精度：降采样到 ≤32 点、5 位有效数字，别让缓存文件膨胀
+  const closes = ((r.indicators && r.indicators.quote && r.indicators.quote[0]) || {}).close || [];
+  const pts = closes.filter(v => v != null);
+  if (pts.length > 4) {
+    const n = Math.min(32, pts.length), sp = [];
+    for (let i = 0; i < n; i++) sp.push(+pts[Math.round(i * (pts.length - 1) / (n - 1))].toPrecision(5));
+    out.spark = sp;
+  }
   return out;
 }
 async function getStocks() {
@@ -396,8 +410,9 @@ async function getStocks() {
       const out = [];
       for (const s of CONFIG.STOCKS) {
         try {
+          // range=2d 而不是 1d：同一个请求顺便喂饱迷你走势线，交易时段判定用的 meta 不受影响
           const j = await getJSON("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(s) +
-            "?range=1d&interval=15m&includePrePost=true");
+            "?range=2d&interval=15m&includePrePost=true");
           const q = parseChart(s, j, nowSec);
           if (q) out.push(q);
         } catch (e) { console.warn("chart " + s + ": " + e); }
@@ -653,10 +668,11 @@ function pill(stack, label, fg, bg) {
 
 // ---- 一天的进度条：轨道 + 白昼段 + 当前时刻游标 -------------------------
 // 直接回答「现在处于一天的哪个位置」，比再写一遍时间有用。
-function dayBarImage(w, h, now, sunriseStr, sunsetStr) {
+function dayBarImage(w, h, now, sunriseStr, sunsetStr, hourlyPop) {
   const ctx = new DrawContext();
   ctx.size = new Size(w, h); ctx.opaque = false; ctx.respectScreenScale = true;
-  const r = h / 2;
+  const sunH = DAY_BAR_SUN_H, gap = 1, rainH = h - sunH - gap;
+  const r = sunH / 2;
   const frac = (d) => (d.getHours() * 60 + d.getMinutes()) / 1440;
   const parseHM = (s) => {
     if (!s) return null;
@@ -664,7 +680,7 @@ function dayBarImage(w, h, now, sunriseStr, sunsetStr) {
     return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) / 1440 : null;
   };
   const track = new Path();
-  track.addRoundedRect(new Rect(0, 0, w, h), r, r);
+  track.addRoundedRect(new Rect(0, 0, w, sunH), r, r);
   ctx.setFillColor(tint(C.faint, 0.4));
   ctx.addPath(track); ctx.fillPath();
 
@@ -679,16 +695,62 @@ function dayBarImage(w, h, now, sunriseStr, sunsetStr) {
       const k = 1 - Math.abs(t - 0.5) * 2;
       const col = new Color(k > 0.5 ? C.amber.hex : C.orange.hex, 0.35 + 0.5 * k);
       ctx.setFillColor(col);
-      ctx.fillRect(new Rect(sx, 0, sw, h));
+      ctx.fillRect(new Rect(sx, 0, sw, sunH));
     }
   }
-  // 当前时刻：外圈用背景色挖一圈，让游标在任何底色上都清晰
-  const cx = Math.max(r, Math.min(w - r, frac(now) * w));
+  // 降雨条：同一条 0-24h 时间轴，每小时一格，蓝色深浅 = 降雨概率；已过去的小时压暗。
+  // 和白昼段共用横轴的意义在于：游标一插下来，「几点下雨、离现在多久」就直接可读。
+  if (rainH > 0 && hourlyPop && hourlyPop.length >= 24) {
+    const cw = w / 24;
+    for (let hh = 0; hh < 24; hh++) {
+      const pop = num(hourlyPop[hh]);
+      if (pop == null || pop < 10) continue;             // 低于 10% 不画，免得整条都是噪声
+      const alpha = (0.16 + 0.74 * pop / 100) * (hh < now.getHours() ? 0.28 : 1);
+      ctx.setFillColor(tint(C.blue, alpha));
+      ctx.fillRect(new Rect(hh * cw + 0.4, sunH + gap, cw - 0.8, rainH));
+    }
+  }
+  // 当前时刻：竖向贯穿两条，先用背景色挖缝再画游标，任何底色上都清晰
+  const cx = Math.max(2.5, Math.min(w - 2.5, frac(now) * w));
   ctx.setFillColor(new Color(C.bg1.hex, 0.95));
-  ctx.fillEllipse(new Rect(cx - r - 1.6, -1.6, (r + 1.6) * 2, h + 3.2));
+  ctx.fillRect(new Rect(cx - 2.3, 0, 4.6, h));
+  const cur = new Path();
+  cur.addRoundedRect(new Rect(cx - 1.2, 0, 2.4, h), 1.2, 1.2);
   ctx.setFillColor(C.fg);
-  ctx.fillEllipse(new Rect(cx - r, 0, r * 2, h));
+  ctx.addPath(cur); ctx.fillPath();
   return ctx.getImage();
+}
+
+// ---- 股票迷你走势线：两日收盘序列 + 前收虚线基准 + 端点 ----
+function sparkImage(w, h, pts, prev, col) {
+  const ctx = new DrawContext();
+  ctx.size = new Size(w, h); ctx.opaque = false; ctx.respectScreenScale = true;
+  let mn = Math.min(...pts), mx = Math.max(...pts);
+  if (prev != null) { mn = Math.min(mn, prev); mx = Math.max(mx, prev); }
+  if (mx - mn < 1e-9) { mn -= 1; mx += 1; }
+  const X = (i) => 1 + i / (pts.length - 1) * (w - 4);
+  const Y = (v) => (h - 2) - (v - mn) / (mx - mn) * (h - 4) + 1;
+  if (prev != null) {
+    // 前收基准虚线：线在虚线上方=红盘，下方=绿盘（或反之），比只看颜色多一层参照
+    ctx.setFillColor(tint(C.faint, 0.7));
+    const y = Y(prev);
+    for (let x = 1; x < w - 1; x += 3.2) ctx.fillRect(new Rect(x, y - 0.4, 1.7, 0.8));
+  }
+  const path = new Path();
+  path.addLines(pts.map((v, i) => new Point(X(i), Y(v))));
+  ctx.setStrokeColor(col); ctx.setLineWidth(1.4);
+  ctx.addPath(path); ctx.strokePath();
+  const lx = X(pts.length - 1), ly = Y(pts[pts.length - 1]);
+  ctx.setFillColor(col);
+  ctx.fillEllipse(new Rect(lx - 1.7, ly - 1.7, 3.4, 3.4));
+  return ctx.getImage();
+}
+
+// 月相：从农历日近似（初一朔、十五望），映射到 8 个 SF 月相符号；符号缺失时回落普通月亮
+function moonSymbol(lunDay) {
+  const idx = Math.round((lunDay - 1) / 29.53 * 8) % 8;
+  return ["moonphase.new.moon", "moonphase.waxing.crescent", "moonphase.first.quarter", "moonphase.waxing.gibbous",
+    "moonphase.full.moon", "moonphase.waning.gibbous", "moonphase.last.quarter", "moonphase.waning.crescent"][idx];
 }
 
 // ---- 「现在」分隔线：圆点 + 时刻 + 细线，插在今天已过去和还没到的日程之间 ----
@@ -794,7 +856,7 @@ async function build() {
   txt(r1, "W" + isoWeek(now) + "·D" + dayOfYear(now), F.small, C.dim);
   r1.addSpacer(2);
   if (lun) {
-    icon(r1, "moon.fill", LAY.font - 2, C.amber, "");
+    if (!icon(r1, moonSymbol(lun.day), LAY.font - 2, C.amber, "")) icon(r1, "moon.fill", LAY.font - 2, C.amber, "");
     txt(r1, lun.ganzhi + lun.shengxiao + " " + lun.monthName + lun.dayName, F.title, C.amber);
   }
   if (jq && jq.next) {
@@ -858,8 +920,9 @@ async function build() {
   // ============ 一天的进度条 ============
   if (CONFIG.SHOW_DAY_BAR) {
     const barRow = w.addStack(); barRow.layoutHorizontally(); barRow.centerAlignContent();
-    const im = barRow.addImage(dayBarImage(LAY.W, DAY_BAR_H, now, W && W.sunrise, W && W.sunset));
-    im.imageSize = new Size(LAY.W, DAY_BAR_H);
+    const barH2 = CONFIG.SHOW_HOURLY_RAIN ? DAY_BAR_H : DAY_BAR_SUN_H;
+    const im = barRow.addImage(dayBarImage(LAY.W, barH2, now, W && W.sunrise, W && W.sunset, CONFIG.SHOW_HOURLY_RAIN && W ? W.hourlyPop : null));
+    im.imageSize = new Size(LAY.W, barH2);
   }
 
   // ============ BODY ============
@@ -911,6 +974,10 @@ async function build() {
     const past = dayOff === 0 && e.endDate <= now;
     const ongoing = e.startDate <= now && e.endDate > now && dayOff === 0;
     const col = past ? C.faint : ongoing ? C.green : e === nextEv ? C.blue : dayOff > 0 ? C.dim : C.fg;
+    // 所属日历的真实颜色做成小圆点——工作/私人/家庭一眼分开，这颜色是系统里用户自己配的
+    let calCol = (e.calendar && e.calendar.color) || C.faint;
+    if (past) { try { calCol = new Color(calCol.hex, 0.35); } catch (err) { /* keep */ } }
+    const dot = s.addStack(); dot.size = new Size(4, 4); dot.backgroundColor = calCol; dot.cornerRadius = 2;
     txt(s, e.isAllDay ? "ALL" : hm(e.startDate), F.monoSm, past ? C.faint : ongoing ? C.green : e === nextEv ? C.blue : C.dim);
     txt(s, e.title, F.title, col, { scale: 0.8 });
     s.addSpacer();
@@ -1047,15 +1114,28 @@ async function build() {
   txt(mh, "MKT", F.label, mkMeta.color, { scale: 1 });
   mh.addSpacer();
   if (mkSession && mkMeta.label) txt(mh, mkMeta.label, F.labelSm, mkMeta.color, { scale: 1 });
+  const qCharW = (LAY.font - 2.5) * 0.62;
   for (const q of quotes) {
     const meta = SESSION_META[q.session] || SESSION_META.UNKNOWN;
     const closed = q.session === "CLOSED";
     const s = mkBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 3;
-    icon(s, meta.icon, LAY.font - 4.5, meta.color, "");
+    const pctCol = q.pct == null ? C.dim : closed ? tint(q.pct >= 0 ? UP : DOWN, 0.75) : (q.pct >= 0 ? UP : DOWN);
+    // 走势线只在真放得下的时候画（按实际字符数算宽度，最少 14pt）；
+    // 塞不下——典型是盘后行还带一个盘后变动——就回落时段小图标，那个图标本身也是信息。
+    // 绝不靠把文字缩小来硬塞。
+    const extStr = q.extPct != null ? (q.extPct >= 0 ? "+" : "") + q.extPct.toFixed(1) : "";
+    const usedW = (Math.min(q.sym.length, 5) + fmtPrice(q.price).length + fmtPct(q.pct).length + extStr.length) * qCharW
+      + 3 * (extStr ? 5 : 4);
+    const sw = Math.min(34, innerW - usedW);
+    if (CONFIG.SHOW_SPARKLINES && q.spark && q.spark.length > 3 && sw >= 14) {
+      const im = s.addImage(sparkImage(sw, 11, q.spark, q.prev, pctCol));
+      im.imageSize = new Size(sw, 11);
+    } else {
+      icon(s, meta.icon, LAY.font - 4.5, meta.color, "");
+    }
     txt(s, q.sym.length > 5 ? q.sym.slice(0, 5) : q.sym, F.monoXsBold, closed ? C.dim : C.fg);
     s.addSpacer();
     txt(s, fmtPrice(q.price), F.monoXs, closed ? C.dim : C.fg);
-    const pctCol = q.pct == null ? C.dim : closed ? tint(q.pct >= 0 ? UP : DOWN, 0.75) : (q.pct >= 0 ? UP : DOWN);
     txt(s, fmtPct(q.pct), F.monoXsBold, pctCol, { right: true });
     if (q.extPct != null) txt(s, (q.extPct >= 0 ? "+" : "") + q.extPct.toFixed(1), F.monoXs, q.extPct >= 0 ? tint(UP, 0.8) : tint(DOWN, 0.8), { right: true });
   }

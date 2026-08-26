@@ -49,7 +49,11 @@ class DrawContext {
   strokeEllipse() { this.ops.push("ell"); } fillEllipse() { this.ops.push("fill-ell"); }
   fillRect() { this.ops.push("fill-rect"); } drawText(t) { this.ops.push("text:" + t); }
   addPath() {} strokePath() { this.ops.push("arc"); } fillPath() { this.ops.push("fill-path"); }
-  getImage() { return { img: this.ops.some(o => String(o).startsWith("text:")) ? "nowline" : (this.size && this.size.width === this.size.height ? "rings" : "daybar") }; }
+  getImage() {
+    const hasText = this.ops.some(o => String(o).startsWith("text:"));
+    const kind = hasText ? "nowline" : (this.size && this.size.width === this.size.height ? "rings" : (this.size && this.size.width < 60 ? "spark" : "daybar"));
+    return { img: kind };
+  }
 }
 // A few symbols only exist on newer iOS; the script must fall back rather than crash.
 const MISSING_SYMBOLS = new Set(["aqi.medium", "checklist", "calendar.day.timeline.left", "mountain.2.fill"]);
@@ -127,18 +131,27 @@ function chartResponse(sym) {
   const [reg, prev, ext] = STOCK_DATA[sym] || [100, 100, 100];
   const cp = tradingPeriod();
   const win = SESSION === "PRE" ? cp.pre : SESSION === "POST" ? cp.post : cp.regular;
+  // a deterministic two-day series (with a null hole) so the sparkline path is exercised
+  const ts = [], closes = [], n = 24, t0 = cp.regular.start - 26 * 3600;
+  for (let i = 0; i < n; i++) {
+    ts.push(t0 + i * 3600);
+    closes.push(i === 5 ? null : +(prev + (reg - prev) * (i / (n - 1)) + Math.sin(i * 1.3) * reg * 0.004).toFixed(2));
+  }
+  ts.push(nowSec - 120);
+  closes.push((SESSION === "PRE" || SESSION === "POST") ? ext : reg);
   return {
     chart: { result: [{
       meta: Object.assign(
         { symbol: sym, currency: "USD", regularMarketPrice: reg, previousClose: prev, chartPreviousClose: prev },
         process.env.NOPERIOD ? {} : { currentTradingPeriod: cp }),
-      timestamp: [win.start + 60, nowSec - 120],
-      indicators: { quote: [{ close: [null, (SESSION === "PRE" || SESSION === "POST") ? ext : reg] }] },
+      timestamp: ts,
+      indicators: { quote: [{ close: closes }] },
     }] },
   };
 }
 const RESP = {
-  "api.open-meteo.com": { elevation: 41, current: { temperature_2m: 31.4, relative_humidity_2m: 68, apparent_temperature: 34.2, weather_code: 2, wind_speed_10m: 11.5, wind_direction_10m: 140, uv_index: 6.8, precipitation: 0, is_day: 1, pressure_msl: 1012.6 }, daily: { temperature_2m_max: [33.1], temperature_2m_min: [26.2], sunrise: ["2026-08-25T05:07"], sunset: ["2026-08-25T18:22"], uv_index_max: [8.9], precipitation_probability_max: [10], precipitation_sum: [0] } },
+  "api.open-meteo.com": { elevation: 41, current: { temperature_2m: 31.4, relative_humidity_2m: 68, apparent_temperature: 34.2, weather_code: 2, wind_speed_10m: 11.5, wind_direction_10m: 140, uv_index: 6.8, precipitation: 0, is_day: 1, pressure_msl: 1012.6 }, daily: { temperature_2m_max: [33.1], temperature_2m_min: [26.2], sunrise: ["2026-08-25T05:07"], sunset: ["2026-08-25T18:22"], uv_index_max: [8.9], precipitation_probability_max: [10], precipitation_sum: [0] },
+    hourly: { precipitation_probability: [0,0,0,5,5,10,10,5,0,0,5,15,30,55,80,90,70,40,20,10,5,0,0,0] } },
   "air-quality-api.open-meteo.com": { current: { us_aqi: 42, pm2_5: 9.1 } },
   "api.binance.com": [{ symbol: "BTCUSDT", lastPrice: "112340.55", priceChangePercent: "-0.83" }, { symbol: "ETHUSDT", lastPrice: "4312.10", priceChangePercent: "2.15" }],
   "ip-api.com": { status: "success", query: "203.0.113.5", isp: "KDDI CORPORATION", org: "au", as: "AS2516 KDDI", countryCode: "JP", proxy: false, hosting: process.env.VPN === "1" },
@@ -153,7 +166,12 @@ class Request {
     if (host === "query1.finance.yahoo.com") {
       const m = this.url.match(/\/chart\/([^?]+)/);
       if (m) return chartResponse(decodeURIComponent(m[1]));
-      throw new Error("spark not mocked (extended-hours path should not need it)");
+      // batch endpoint used when EXTENDED_HOURS=false
+      return { spark: { result: Object.keys(STOCK_DATA).map(sym => ({
+        symbol: sym,
+        response: [{ meta: { regularMarketPrice: STOCK_DATA[sym][0], previousClose: STOCK_DATA[sym][1],
+          chartPreviousClose: STOCK_DATA[sym][1], currentTradingPeriod: tradingPeriod() } }],
+      })) } };
     }
     if (!(host in RESP)) throw new Error("no mock for " + host);
     return RESP[host];
@@ -172,8 +190,8 @@ class Device {
     return { width: w, height: h };
   }
 }
-const cal = t => ({ title: t });
-const CALS = [cal("Work"), cal("Personal"), cal("Birthdays")];
+const cal = (t, c) => ({ title: t, color: new Color(c || "#7AA2F7") });
+const CALS = [cal("Work", "#7AA2F7"), cal("Personal", "#9ECE6A"), cal("Birthdays", "#F7768E")];
 const ev = (title, h, m, dur, all, c) => ({ title, startDate: new RealDate(2026, 7, 25, h, m), endDate: new RealDate(2026, 7, 25, h, m + dur), isAllDay: !!all, calendar: c || CALS[0] });
 const evT = (title, h, m, dur) => ({ title, startDate: new RealDate(2026, 7, 26, h, m), endDate: new RealDate(2026, 7, 26, h, m + dur), isAllDay: false, calendar: CALS[0] });
 class Calendar { static async forEvents() { return CALS; } static async forReminders() { return [cal("Todo"), cal("Shopping")]; } }

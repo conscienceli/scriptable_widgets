@@ -7,7 +7,12 @@
   rounded rect spanning x 89..1204, y 253..1411 at 3x. Font 13.2, left
   column 182, right column 161, month cells 18pt at an adaptive 10.5pt.
   SF Symbols are approximated with inline SVG; the widget uses the real ones.
-  Shown with a bridge present and the market after hours.
+  Shown with a bridge present and the market open (sparklines visible;
+  after-hours rows would show the session icon instead). The stock rows
+  carry two-day sparklines (drawn from the same chart request the quotes use),
+  the day bar gains an hourly-rain strip on the same 0-24h axis, agenda rows
+  are prefixed with their calendar's real colour, and the header moon shows
+  the actual phase computed from the lunar day.
 -->
 <style>
   html,body{margin:0}
@@ -59,6 +64,7 @@
 <svg style="display:none">
   <symbol id="cal" viewBox="0 0 24 24"><path d="M3 8h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8zM5 2h2v3H5zm12 0h2v3h-2zM3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1H3z"/></symbol>
   <symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></symbol>
+  <symbol id="moonphase" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor" opacity=".25"/><path d="M12 3a9 9 0 0 1 0 18 12 12 0 0 0 3-9 12 12 0 0 0-3-9z" opacity="0"/><path d="M9 3.5a9 9 0 1 0 6 17A11 11 0 0 1 9 3.5z" fill="currentColor" opacity="0"/><path d="M12 3a9 9 0 1 1-4.5 16.8A11.5 11.5 0 0 0 12 3z" transform="rotate(180 12 12)" fill="currentColor"/></symbol>
   <symbol id="cloudsun" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="4"/><path d="M7 21a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6-.4A3.5 3.5 0 0 1 17.5 21z"/></symbol>
   <symbol id="drop" viewBox="0 0 24 24"><path d="M12 2s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></symbol>
   <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v2M12 21v2M1 12h2M21 12h2M4 4l1.5 1.5M18.5 18.5L20 20M20 4l-1.5 1.5M5.5 18.5L4 20"/></g></symbol>
@@ -89,7 +95,7 @@
   <div class="blk t-blue row">
     <svg class="ic blue"><use href="#cal"/></svg><span class="mo b">WED 26 AUG</span>
     <span class="sm dim mo">W35·D238</span><span style="width:2px"></span>
-    <svg class="ic s amber"><use href="#moon"/></svg><span class="amber">丙午马 七月十四</span>
+    <svg class="ic s amber"><use href="#moonphase"/></svg><span class="amber">丙午马 七月十四</span>
     <span class="sm dim">白露-12d</span><span class="sp"></span>
   </div>
 
@@ -112,8 +118,8 @@
     <svg class="ic s orange"><use href="#sunset"/></svg><span class="sm mo dim">18:46</span>
   </div>
 
-  <!-- day progress bar: track, daylight band, current-time cursor -->
-  <svg width="350" height="5" viewBox="0 0 350 5" style="display:block">
+  <!-- day bar: daylight band on top, hourly rain probability below, one shared 0-24h axis -->
+  <svg width="350" height="9" viewBox="0 0 350 9" style="display:block">
     <defs>
       <linearGradient id="day" x1="0" x2="1">
         <stop offset="0" stop-color="#FF9E64" stop-opacity=".4"/>
@@ -126,8 +132,20 @@
       <rect x="0" y="0" width="350" height="5" fill="#4B5273" fill-opacity=".4"/>
       <rect x="88" y="0" width="185" height="5" fill="url(#day)"/>
     </g>
-    <circle cx="200" cy="2.5" r="4.1" fill="#12131C"/>
-    <circle cx="200" cy="2.5" r="2.5" fill="#C6D0F5"/>
+    <!-- rain: hours 11..19, alpha follows probability; hours before "now" dimmed -->
+    <g fill="#7AA2F7">
+      <rect x="160.8" y="6" width="13.8" height="3" opacity=".08"/>
+      <rect x="175.4" y="6" width="13.8" height="3" opacity=".13"/>
+      <rect x="204.6" y="6" width="13.8" height="3" opacity=".38"/>
+      <rect x="219.2" y="6" width="13.8" height="3" opacity=".57"/>
+      <rect x="233.7" y="6" width="13.8" height="3" opacity=".75"/>
+      <rect x="248.3" y="6" width="13.8" height="3" opacity=".82"/>
+      <rect x="262.9" y="6" width="13.8" height="3" opacity=".68"/>
+      <rect x="277.5" y="6" width="13.8" height="3" opacity=".45"/>
+      <rect x="292.1" y="6" width="13.8" height="3" opacity=".3"/>
+    </g>
+    <rect x="197.7" y="0" width="4.6" height="9" fill="#12131C" opacity=".95"/>
+    <rect x="198.8" y="0" width="2.4" height="9" rx="1.2" fill="#C6D0F5"/>
   </svg>
 
   <div class="body">
@@ -136,9 +154,9 @@
         <div class="ev"><svg class="ic s blue"><use href="#timeline"/></svg><span class="lbl blue">AGENDA</span><span class="sp"></span><svg class="ic s green"><use href="#play"/></svg><span class="sm mo green">14:00</span></div>
 
         <div class="gh"><i style="background:#7AA2F7"></i><span class="lbl2 blue">TODAY</span><span class="sp"></span><span class="faint mo" style="font-size:10.7px">8/26</span></div>
-        <div class="ev"><span class="sm mo faint">ALL</span><span class="t faint">还款日 中国银行</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">金融</span></div>
-        <div class="ev"><span class="sm mo faint">09:30</span><span class="t faint">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
-        <div class="ev"><span class="sm mo green">13:00</span><span class="t green">TAI Lab 组会</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">1h</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:rgba(158,206,106,.35);display:inline-block;flex:none"></span><span class="sm mo faint">ALL</span><span class="t faint">还款日 中国银行</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">金融</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:rgba(122,162,247,.35);display:inline-block;flex:none"></span><span class="sm mo faint">09:30</span><span class="t faint">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#7AA2F7;display:inline-block;flex:none"></span><span class="sm mo green">13:00</span><span class="t green">TAI Lab 组会</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">1h</span></div>
 
         <!-- now line -->
         <svg width="170" height="11" viewBox="0 0 170 11" style="display:block">
@@ -147,15 +165,15 @@
           <rect x="44" y="5" width="126" height="1" fill="#FF9E64" fill-opacity=".45"/>
         </svg>
 
-        <div class="ev"><span class="sm mo blue">17:30</span><span class="t blue">晚 product standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#7AA2F7;display:inline-block;flex:none"></span><span class="sm mo blue">17:30</span><span class="t blue">晚 product standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
 
         <div class="gh"><i style="background:#73DACA"></i><span class="lbl2 teal">TOMORROW</span><span class="sp"></span><span class="faint mo" style="font-size:10.7px">8/27</span></div>
-        <div class="ev"><span class="sm mo dim">ALL</span><span class="t dim">中元节</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">节假日</span></div>
-        <div class="ev"><span class="sm mo dim">09:30</span><span class="t dim">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
-        <div class="ev"><span class="sm mo dim">17:30</span><span class="t dim">晚 product standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#F7768E;display:inline-block;flex:none"></span><span class="sm mo dim">ALL</span><span class="t dim">中元节</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">节假日</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#7AA2F7;display:inline-block;flex:none"></span><span class="sm mo dim">09:30</span><span class="t dim">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#7AA2F7;display:inline-block;flex:none"></span><span class="sm mo dim">17:30</span><span class="t dim">晚 product standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
 
         <div class="gh"><i style="background:#8A93B8"></i><span class="lbl2 dim">FRI</span><span class="sp"></span><span class="faint mo" style="font-size:10.7px">8/28</span></div>
-        <div class="ev"><span class="sm mo dim">09:30</span><span class="t dim">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
+        <div class="ev"><span style="width:4px;height:4px;border-radius:2px;background:#7AA2F7;display:inline-block;flex:none"></span><span class="sm mo dim">09:30</span><span class="t dim">morning standup</span><span class="sp"></span><span class="mo faint" style="font-size:10.7px">30m</span></div>
       </div>
 
       <div class="blk t-orange">
@@ -176,11 +194,11 @@
         <div class="grid"><div class="faint">36</div><div>31</div><div class="faint">&nbsp;1</div><div class="faint">&nbsp;2</div><div class="faint">&nbsp;3</div><div class="faint">&nbsp;4</div><div class="faint">&nbsp;5</div><div class="faint">&nbsp;6</div></div>
       </div>
 
-      <div class="blk t-purple">
-        <div class="ev"><svg class="ic s purple"><use href="#chart"/></svg><span class="lbl purple">MKT</span><span class="sp"></span><span class="lbl2 purple">POST</span></div>
-        <div class="q ev mo" style="gap:3px"><svg class="ic s purple"><use href="#moon"/></svg><span class="b">AAPL</span><span class="sp"></span><span>309.90</span><span class="b green">-0.14%</span><span style="color:#7a9a52">+0.3</span></div>
-        <div class="q ev mo" style="gap:3px"><svg class="ic s purple"><use href="#moon"/></svg><span class="b">NVDA</span><span class="sp"></span><span>213.05</span><span class="b red">+2.19%</span><span style="color:#c25e72">-0.4</span></div>
-        <div class="q ev mo" style="gap:3px"><svg class="ic s purple"><use href="#moon"/></svg><span class="b">TSLA</span><span class="sp"></span><span>350.25</span><span class="b red">+0.37%</span><span style="color:#7a9a52">+0.2</span></div>
+      <div class="blk t-green">
+        <div class="ev"><svg class="ic s green"><use href="#chart"/></svg><span class="lbl green">MKT</span><span class="sp"></span><span style="width:6px;height:6px;border-radius:3px;background:#9ECE6A;display:inline-block"></span><span class="lbl2 green">OPEN</span></div>
+        <div class="q ev mo" style="gap:3px"><svg width="30" height="11" viewBox="0 0 30 11" style="flex:none"><line x1="1" y1="4.2" x2="29" y2="4.2" stroke="#4B5273" stroke-width=".8" stroke-dasharray="1.7 1.6" opacity=".8"/><polyline points="1.0,3 5.7,4.5 10.3,3.5 15.0,6 19.7,7.5 24.3,6.5 29.0,5.5" fill="none" stroke="#9ECE6A" stroke-width="1.4" stroke-linejoin="round"/><circle cx="29" cy="5.5" r="1.7" fill="#9ECE6A"/></svg><span class="b">AAPL</span><span class="sp"></span><span>309.90</span><span class="b green">-0.14%</span></div>
+        <div class="q ev mo" style="gap:3px"><svg width="30" height="11" viewBox="0 0 30 11" style="flex:none"><line x1="1" y1="7.2" x2="29" y2="7.2" stroke="#4B5273" stroke-width=".8" stroke-dasharray="1.7 1.6" opacity=".8"/><polyline points="1.0,8 5.7,6.5 10.3,7 15.0,5 19.7,3.5 24.3,4 29.0,2.5" fill="none" stroke="#F7768E" stroke-width="1.4" stroke-linejoin="round"/><circle cx="29" cy="2.5" r="1.7" fill="#F7768E"/></svg><span class="b">NVDA</span><span class="sp"></span><span>213.05</span><span class="b red">+2.19%</span></div>
+        <div class="q ev mo" style="gap:3px"><svg width="30" height="11" viewBox="0 0 30 11" style="flex:none"><line x1="1" y1="6.6" x2="29" y2="6.6" stroke="#4B5273" stroke-width=".8" stroke-dasharray="1.7 1.6" opacity=".8"/><polyline points="1.0,6 5.7,7 10.3,5.5 15.0,6.5 19.7,5 24.3,5.8 29.0,4.8" fill="none" stroke="#F7768E" stroke-width="1.4" stroke-linejoin="round"/><circle cx="29" cy="4.8" r="1.7" fill="#F7768E"/></svg><span class="b">TSLA</span><span class="sp"></span><span>350.25</span><span class="b red">+0.37%</span></div>
         <div class="q ev mo" style="gap:3px"><svg class="ic s cyan"><use href="#bolt"/></svg><span class="b">BTC</span><span class="sp"></span><span>79,095</span><span class="b green">-2.09%</span></div>
         <div class="q ev mo" style="gap:3px"><svg class="ic s cyan"><use href="#bolt"/></svg><span class="b">ETH</span><span class="sp"></span><span>2,464.3</span><span class="b green">-1.83%</span></div>
       </div>
