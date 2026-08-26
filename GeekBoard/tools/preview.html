@@ -3,19 +3,20 @@
 <!--
   Static mock-up of the widget, used only to render preview.png.
   Geometry mirrors what GeekBoard.js computes for a 430x932 screen
-  (iPhone 15/16 Pro Max, 15/16 Plus): widget 372x364 - measured on a real
-  device, not taken from the old published size tables - font 13.2,
-  left column 182, right column 161, calendar cell 18 at an
-  adaptive 10.1pt (the script shrinks the month grid to whatever space the
-  quote and activity blocks leave).
+  (iPhone 15/16 Pro Max, 15/16 Plus): widget 372x386, measured off a real
+  screenshot (dark rounded rect spans x 89..1204, y 253..1411 at 3x).
+  Font 13.2, left column 182, right column 161. The month grid font is
+  adaptive - 10.6pt here, with a bridge present - and its columns line up
+  because every date is padded to two monospace characters, not because
+  the cells have a fixed width.
   SF Symbols are approximated with inline SVG here; the widget uses the real ones.
   Shown in POST (after-hours) market state to exercise the session styling.
 -->
 <style>
   html,body{margin:0}
-  body{display:flex;align-items:center;justify-content:center;width:440px;height:452px;
+  body{display:flex;align-items:center;justify-content:center;width:440px;height:474px;
        background:linear-gradient(160deg,#2b2f3a,#12141a)}
-  .w{width:372px;height:364px;box-sizing:border-box;border-radius:22px;background:#0b0f14;
+  .w{width:372px;height:386px;box-sizing:border-box;border-radius:22px;background:#0b0f14;
      padding:8px 11px 6px 11px;font-family:"DejaVu Sans Mono","Noto Sans CJK JP",monospace;
      font-size:13.2px;line-height:16.2px;color:#e6edf3;display:flex;flex-direction:column;gap:2px;
      overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5)}
@@ -36,8 +37,8 @@
   .right{width:161px;display:flex;flex-direction:column;gap:3px}
   .ev{display:flex;gap:4px;align-items:center;white-space:nowrap}
   .ev .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
-  .grid{display:flex}
-  .grid div{width:18px;height:12.6px;font-size:10.1px;text-align:center;line-height:12.6px}
+  .grid{display:flex;gap:4.4px}
+  .grid div{font-size:10.6px;line-height:13.5px;text-align:center;padding:1px}
   .today{background:#e6edf3;color:#0b0f14;border-radius:3px;font-weight:bold}
   .ic{width:12px;height:12px;flex:none;vertical-align:-1px}
   .ic.s{width:10px;height:10px}
@@ -113,7 +114,9 @@
         <div class="ev"><span>19:00</span><span class="t">Dinner @ Ginza</span><span class="sp"></span><span class="sm faint">2h</span></div>
         <div class="ev"><span class="dim">+08:00</span><span class="t dim">Board prep</span><span class="sp"></span><span class="sm faint">8/26</span></div>
         <div class="ev"><span class="dim">+10:15</span><span class="t dim">Flight HND-SFO</span><span class="sp"></span><span class="sm faint">8/26</span></div>
-        <div class="ev"><span class="sm faint">+4 more</span></div>
+        <div class="ev"><span class="dim">+10:00</span><span class="t dim">Quarterly review</span><span class="sp"></span><span class="sm faint">8/27</span></div>
+        <div class="ev"><span class="dim">+09:00</span><span class="t dim">Team offsite</span><span class="sp"></span><span class="sm faint">8/28</span></div>
+        <div class="ev"><span class="sm faint">+2 more</span></div>
       </div>
       <div class="blk t-orange">
         <div class="ev"><svg class="ic s orange"><use href="#checklist"/></svg><span class="sm b orange">TODO</span><span class="sm red">4·1!</span><span class="sp"></span></div>

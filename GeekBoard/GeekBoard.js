@@ -64,11 +64,12 @@ const CONFIG = {
 // DEVICE / SIZE
 // =====================================================================
 // 大号 Widget 的实际尺寸 Scriptable 读不到，只能从屏幕推。
-// 下面两个比例是在真机上量出来的：430x932 的屏，大号 Widget 实测 372x364 pt。
-//   372/430 = 0.865   364/372 = 0.978
-// 网上流传的旧尺寸表（如 430x932 → 364x382）在当前 iOS 上已经不准，宽了会裁字、高了会裁行，
-// 所以这里用比例推算而不是查表。要是你的机器对不上，量一下填 SIZE_OVERRIDE 即可。
-const W_RATIO = 0.865, H_RATIO = 0.978;
+// 下面两个比例是在真机截图上量出来的：430x932 的屏，Widget 深色圆角矩形占 x 89..1204、
+// y 253..1411（设备像素，3x），即 372 x 386 pt。
+//   372/430 = 0.8651    386/372 = 1.0384
+// 量的时候务必取靠近中线的那一列/那一行——贴着边缘量会落进圆角里，两头各少算一截，
+// 我第一次就是这么把高度量成 364 的。
+const W_RATIO = 0.8651, H_RATIO = 1.0384;
 function widgetSize() {
   const o = CONFIG.SIZE_OVERRIDE;
   if (o && o.w && o.h) return { w: o.w, h: o.h, src: "override" };
@@ -90,18 +91,18 @@ const LAY = (() => {
   const gap = 7;
   const rightW = Math.round(W * CONFIG.RIGHT_RATIO);
   const leftW = W - rightW - gap;
-  const lineH = font + 3;
+  // 行距实测：字号 13.2 时相邻两行间隔 16.67pt，即 1.263 倍。取 1.27 略微保守。
+  const lineH = font * 1.27;
   const blockV = BLOCK_PAD_V * 2;
   const stackGap = 2;
-  // 固定开销：外边距 + 顶部3个横条 + 底部2行 + 顶层堆叠间距(6处)
-  const chrome = PAD_TOP + PAD_BOT + (lineH + blockV) * 3 + (font + 1 + blockV) * 2 + stackGap * 6;
-  // 左栏自身开销：AGENDA / TODO 两个区块的内边距 + 它们之间的间距
-  const leftOverhead = blockV * 2 + stackGap;
-  // 少排一行作为安全余量：高度估算偏大时，撑爆的代价是底栏被裁掉（丢 IP/VPN），
-  // 而估小的代价只是最后一条未来日程不显示。两害相权取其轻。
-  const leftLines = Math.max(6, Math.floor((WSZ.h - chrome - leftOverhead) / lineH) - 1);
-  const bodyH = WSZ.h - chrome;          // 左右两栏共用的可用高度
-  return { W, font, gap, rightW, leftW, lineH, leftLines, bodyH };
+  const stripH = lineH + blockV;                 // 顶部三个横条各自的高度
+  const footH = (font - 1) * 1.27 + blockV;      // 底栏每行的高度
+  // 底栏行数、TODO 区块在不在，都要等数据回来才知道，所以 chrome 做成函数、渲染时再算，
+  // 免得像上一版那样按“永远两行底栏”预留，白白浪费一行多。
+  const bodyH = (footerRows) => WSZ.h - PAD_TOP - PAD_BOT - stripH * 3 - footH * footerRows - stackGap * (3 + footerRows);
+  const linesFor = (footerRows, hasTodo) =>
+    Math.max(6, Math.floor((bodyH(footerRows) - blockV * (hasTodo ? 2 : 1) - (hasTodo ? stackGap : 0)) / lineH));
+  return { W, font, gap, rightW, leftW, lineH, blockV, stackGap, bodyH, linesFor };
 })();
 
 // =====================================================================
@@ -721,10 +722,14 @@ async function build() {
     || (E.byDay || []).slice(1).flat().find(e => !e.isAllDay);
   const cur = todayAll.find(e => !e.isAllDay && e.startDate <= now && e.endDate > now);
 
-  // 行数分配：提醒事项为 0 时整个 TODO 区块不占位，全部让给日程
+  // 行数分配：提醒事项为 0 时整个 TODO 区块不占位；没有桥接时底栏只有一行。
+  // 这两件事都要等数据回来才知道，所以到这里才算可用行数。
   const remWanted = Math.min(remRows.length, CONFIG.MIN_REMINDER_LINES);
   const hasTodo = remRows.length > 0;
-  const evLines = Math.max(3, LAY.leftLines - 1 - (hasTodo ? 1 + remWanted : 0));
+  const footerRows = bridge ? 2 : 1;
+  const leftLines = LAY.linesFor(footerRows, hasTodo);
+  const bodyH = LAY.bodyH(footerRows);
+  const evLines = Math.max(3, leftLines - 1 - (hasTodo ? 1 + remWanted : 0));
 
   const agBlock = block(left, C.blue, LAY.leftW);
   const ah = agBlock.addStack(); ah.layoutHorizontally(); ah.centerAlignContent(); ah.spacing = 3;
@@ -769,7 +774,7 @@ async function build() {
 
   // ---- LEFT: TODO ----
   if (hasTodo) {
-    const remLines = Math.max(1, LAY.leftLines - 2 - shown - (hiddenEv > 0 ? 1 : 0));
+    const remLines = Math.max(1, leftLines - 2 - shown - (hiddenEv > 0 ? 1 : 0));
     const tdBlock = block(left, C.orange, LAY.leftW);
     const rh = tdBlock.addStack(); rh.layoutHorizontally(); rh.centerAlignContent(); rh.spacing = 3;
     const overdue = remRows.filter(r => r.dueDate && r.dueDate < now).length;
@@ -802,35 +807,45 @@ async function build() {
   const gsPre = E.gridStart || (() => { const f = new Date(now.getFullYear(), now.getMonth(), 1); f.setDate(1 - ((f.getDay() + (CONFIG.WEEK_STARTS_MONDAY ? 6 : 0)) % 7)); return f; })();
   const calRows = 1 + Math.ceil((Math.round((new Date(now.getFullYear(), now.getMonth() + 1, 0) - gsPre) / DAY) + 1) / 7);
   const quotesPre = [...((stocks && stocks.v) || []), ...((crypto && crypto.v) || [])].slice(0, CONFIG.QUOTE_ROWS);
+  const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 10 : 0);
   const qRowH = (LAY.font - 2.5) * 1.32;        // 行情数据行
   const hdrRowH = (LAY.font - 1.5) * 1.32;       // 区块标题行（字号比数据行大一号）
   const actRows = (bridge && (bridge.move != null || bridge.steps != null)) ? 4 : 1;
   // 留 8pt 余量：这些行高是按字号估的，估得偏乐观就会把底栏挤出去，宁可月历字小一点
   const rightPad = (CONFIG.SHOW_SECTION_TINT ? BLOCK_PAD_V * 6 : 0) + 6 + 8;
   // 先按全部行情行数试算；月历字号已经压到下限还塞不下，就减行情行数（最少留 2 行）
+  // 月历每行 = 字号 × 1.27（实测行距倍率）+ 2（格子上下内边距各 1）
+  const calRowH = (f) => f * 1.27 + 2;
   let qShown = quotesPre.length, gridFont = 0;
   for (;;) {
-    const avail = LAY.bodyH - rightPad - hdrRowH - qShown * qRowH - actRows * qRowH;
-    gridFont = Math.min(LAY.font - 2, avail / calRows / 1.25);
+    const avail = bodyH - rightPad - hdrRowH - qShown * qRowH - actRows * qRowH;
+    gridFont = Math.min(LAY.font, (avail / calRows - 2) / 1.27);   // 高度有富余就让月历跟正文一样大
     if (gridFont >= 7.5 || qShown <= 2) break;
     qShown--;
   }
-  gridFont = Math.max(7.5, gridFont);
+  // 宽度也是硬约束：8 列 × 2 个等宽字符要塞进 innerW，否则又会被压
+  const gridFontMaxW = (innerW / 8 - 2) / (0.62 * 2);
+  gridFont = Math.max(7.5, Math.min(gridFont, gridFontMaxW));
   const FG = { grid: Font.regularMonospacedSystemFont(gridFont), gridBold: Font.boldMonospacedSystemFont(gridFont) };
 
   const calBlock = block(right, C.blue, LAY.rightW);
-  const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 10 : 0);
-  const cellW = Math.floor(innerW / 8);
-  // 只固定宽度、高度留 0（自动）。给 stack 设死高度会让 Scriptable 把文字硬压进去，
-  // 连 minimumScaleFactor 的下限都不认——月历的字曾因此被压到 1pt 左右，几乎看不见。
+  // 月历格子：不设固定宽度、格子里也不放 spacer。
+  // 之前的写法是「固定宽度 + 两个弹性 spacer 夹一段文字」，弹性 spacer 会优先抢宽度，
+  // 把带 minimumScaleFactor 的文字一路压到 1~2pt——底色框高度正常，字却几乎看不见。
+  // 现在靠等宽字体本身对齐：日期一律补成 2 个字符，列间距由整行统一分配。
+  const pad2c = (v) => { const t = String(v); return t.length >= 2 ? t : " " + t; };
+  const cellPadX = 1;
+  const cellW = gridFont * 0.62 * 2 + cellPadX * 2;
+  const gridGap = Math.max(0, (innerW - cellW * 8) / 7);
   const cell = (row, s, font, color, bg) => {
-    const c = row.addStack(); c.size = new Size(cellW, 0); c.centerAlignContent();
+    const c = row.addStack();
+    c.setPadding(1, cellPadX, 1, cellPadX);
     if (bg) { c.backgroundColor = bg; c.cornerRadius = 3; }
-    c.addSpacer();
-    const t = c.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6;
-    c.addSpacer();
+    const t = c.addText(pad2c(s));
+    t.font = font; t.textColor = color; t.lineLimit = 1;
+    t.minimumScaleFactor = 0.9;   // 下限提到 0.9：布局出问题就该看得出来，而不是缩成微字
   };
-  const hdr = calBlock.addStack(); hdr.layoutHorizontally();
+  const hdr = calBlock.addStack(); hdr.layoutHorizontally(); hdr.spacing = gridGap;
   const dn = CONFIG.WEEK_STARTS_MONDAY ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"];
   cell(hdr, "wk", FG.grid, C.faint);
   dn.forEach((d, i) => cell(hdr, d, FG.gridBold, ((CONFIG.WEEK_STARTS_MONDAY && i >= 5) || (!CONFIG.WEEK_STARTS_MONDAY && (i === 0 || i === 6))) ? C.faint : C.blue));
@@ -838,7 +853,7 @@ async function build() {
   const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   const rowsNeeded = Math.ceil((Math.round((lastOfMonth - gs) / DAY) + 1) / 7);
   for (let r = 0; r < rowsNeeded; r++) {
-    const row = calBlock.addStack(); row.layoutHorizontally();
+    const row = calBlock.addStack(); row.layoutHorizontally(); row.spacing = gridGap;
     const wkDate = new Date(gs.getTime() + r * 7 * DAY);
     const isCurWeek = isoWeek(wkDate) === isoWeek(now) && Math.abs(wkDate - now) < 8 * DAY;
     cell(row, String(isoWeek(wkDate)), FG.grid, isCurWeek ? C.blue : C.faint);
