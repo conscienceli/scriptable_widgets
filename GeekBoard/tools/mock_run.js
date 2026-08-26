@@ -126,7 +126,7 @@ function tradingPeriod() {
     default:       return { pre: { start: nowSec - 4 * H, end: nowSec - H }, regular: { start: nowSec - H, end: nowSec + 5 * H }, post: { start: nowSec + 5 * H, end: nowSec + 9 * H } };
   }
 }
-const STOCK_DATA = { AAPL: [232.14, 229.31, 231.80], NVDA: [181.60, 184.20, 182.95], TSLA: [351.20, 340.00, 349.05] };
+const STOCK_DATA = { "MNQ=F": [23412.25, 23268.00, 23390.50], QQQ: [571.33, 566.20, 570.10], "GC=F": [3352.7, 3371.4, 3358.2], VXX: [42.18, 44.05, 42.55] };
 function chartResponse(sym) {
   const [reg, prev, ext] = STOCK_DATA[sym] || [100, 100, 100];
   const cp = tradingPeriod();

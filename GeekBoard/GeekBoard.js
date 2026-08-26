@@ -13,11 +13,11 @@
 // =====================================================================
 const CONFIG = {
   // ---- 行情（3~5 个即可，超出会被截断到 QUOTE_ROWS）----
-  STOCKS: ["AAPL", "NVDA", "TSLA"],          // Yahoo 代码。港股 0700.HK，A股 600519.SS / 000001.SZ，日股 7203.T，指数 ^GSPC
+  STOCKS: ["MNQ=F", "QQQ", "GC=F", "VXX"],   // Yahoo 代码。期货 MNQ=F/GC=F，港股 0700.HK，A股 600519.SS，日股 7203.T，指数 ^GSPC
   CRYPTO: ["BTC", "ETH"],                    // Binance 现货，自动拼 USDT；备用 CoinGecko
   CRYPTO_GECKO_IDS: { BTC: "bitcoin", ETH: "ethereum", SOL: "solana", BNB: "binancecoin", DOGE: "dogecoin", XRP: "ripple" },
-  QUOTE_ROWS: 5,
-  CN_COLOR_CONVENTION: true,                 // true = 红涨绿跌；false = 绿涨红跌
+  QUOTE_ROWS: 6,
+  CN_COLOR_CONVENTION: false,                // false = 绿涨红跌（默认）；true = 红涨绿跌
   EXTENDED_HOURS: true,                      // 取盘前/盘后价（每个股票 1 次请求；关掉则用批量接口，1 次总请求但没有盘前盘后）
 
   // ---- 日历 / 提醒 ----
@@ -357,7 +357,7 @@ function parseChart(sym, j, nowSec) {
   const prev = m.previousClose != null ? m.previousClose : m.chartPreviousClose;
   const reg = m.regularMarketPrice;
   const sess = sessionOf(m, nowSec);
-  const out = { sym: sym.replace(/^\^/, ""), price: reg, prev,
+  const out = { sym: sym.replace(/^\^/, "").replace(/=F$/, ""), price: reg, prev,
     pct: (reg != null && prev) ? (reg - prev) / prev * 100 : null,
     session: sess.state, until: sess.until, kind: "stock" };
   // 盘前/盘后最新价：取序列里最后一个非空收盘价，且时间戳落在延长时段内
@@ -427,7 +427,7 @@ async function getStocks() {
       const m = r.response && r.response[0] && r.response[0].meta;
       if (!m) continue;
       const prev = m.previousClose != null ? m.previousClose : m.chartPreviousClose;
-      out.push({ sym: r.symbol.replace(/^\^/, ""), price: m.regularMarketPrice, prev,
+      out.push({ sym: r.symbol.replace(/^\^/, "").replace(/=F$/, ""), price: m.regularMarketPrice, prev,
         pct: (m.regularMarketPrice != null && prev) ? (m.regularMarketPrice - prev) / prev * 100 : null,
         session: sessionOf(m, nowSec).state, kind: "stock" });
     }
