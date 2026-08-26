@@ -808,6 +808,7 @@ async function build() {
   const calRows = 1 + Math.ceil((Math.round((new Date(now.getFullYear(), now.getMonth() + 1, 0) - gsPre) / DAY) + 1) / 7);
   const quotesPre = [...((stocks && stocks.v) || []), ...((crypto && crypto.v) || [])].slice(0, CONFIG.QUOTE_ROWS);
   const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 10 : 0);
+  const cellW = Math.floor(innerW / 8);          // 月历 8 列（周数 + 7 天），列宽取整避免累积误差
   const qRowH = (LAY.font - 2.5) * 1.32;        // 行情数据行
   const hdrRowH = (LAY.font - 1.5) * 1.32;       // 区块标题行（字号比数据行大一号）
   const actRows = (bridge && (bridge.move != null || bridge.steps != null)) ? 4 : 1;
@@ -823,27 +824,31 @@ async function build() {
     if (gridFont >= 7.5 || qShown <= 2) break;
     qShown--;
   }
-  // 宽度也是硬约束：8 列 × 2 个等宽字符要塞进 innerW，否则又会被压
-  const gridFontMaxW = (innerW / 8 - 2) / (0.62 * 2);
+  // 宽度也是硬约束：2 个等宽字符必须在一个格子里留有余量，否则又会被压
+  const gridFontMaxW = (cellW - 3) / (0.62 * 2);
   gridFont = Math.max(7.5, Math.min(gridFont, gridFontMaxW));
   const FG = { grid: Font.regularMonospacedSystemFont(gridFont), gridBold: Font.boldMonospacedSystemFont(gridFont) };
 
   const calBlock = block(right, C.blue, LAY.rightW);
-  // 月历格子：不设固定宽度、格子里也不放 spacer。
-  // 之前的写法是「固定宽度 + 两个弹性 spacer 夹一段文字」，弹性 spacer 会优先抢宽度，
-  // 把带 minimumScaleFactor 的文字一路压到 1~2pt——底色框高度正常，字却几乎看不见。
-  // 现在靠等宽字体本身对齐：日期一律补成 2 个字符，列间距由整行统一分配。
+  // 月历格子：列宽写死、格子里绝不放 spacer。
+  //
+  // 踩过的两个坑：
+  //   1) 「固定宽度 + 两个弹性 spacer 夹文字」——spacer 抢宽度的优先级高于文字，
+  //      带 minimumScaleFactor 的文字会被一路压到 1~2pt，底色框高度却正常。
+  //   2) 「不设宽度，靠等宽字体自然对齐」——列宽算得只差 0.6pt 就填满，
+  //      字宽估算稍有偏差就整行被压缩，而各格压缩量不同，于是错位。
+  // 现在两头都不赌：列宽 = floor(可用宽 / 8)，字号反过来受列宽约束并留 3pt 余量，
+  // 文字不允许缩放（minimumScaleFactor = 1）——真放不下就该看见截断，而不是悄悄变形。
   const pad2c = (v) => { const t = String(v); return t.length >= 2 ? t : " " + t; };
-  const cellPadX = 1;
-  const cellW = gridFont * 0.62 * 2 + cellPadX * 2;
   const gridGap = Math.max(0, (innerW - cellW * 8) / 7);
   const cell = (row, s, font, color, bg) => {
     const c = row.addStack();
-    c.setPadding(1, cellPadX, 1, cellPadX);
+    c.size = new Size(cellW, 0);      // 宽度固定、高度自动
+    c.centerAlignContent();
     if (bg) { c.backgroundColor = bg; c.cornerRadius = 3; }
     const t = c.addText(pad2c(s));
     t.font = font; t.textColor = color; t.lineLimit = 1;
-    t.minimumScaleFactor = 0.9;   // 下限提到 0.9：布局出问题就该看得出来，而不是缩成微字
+    t.minimumScaleFactor = 1;
   };
   const hdr = calBlock.addStack(); hdr.layoutHorizontally(); hdr.spacing = gridGap;
   const dn = CONFIG.WEEK_STARTS_MONDAY ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"];

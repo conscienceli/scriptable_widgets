@@ -225,7 +225,8 @@ CACHE=/tmp/c.json SESSION=CLOSED SKEW=25 node tools/mock_run.js  # 25 分钟后�
 | 经纬度灰色 | 定位失败，正在用 `FALLBACK_COORDS`。检查 Scriptable 定位权限是否为「始终」 |
 | 圆环不显示 | 确认 iCloud Drive/Scriptable/geekboard-bridge.json 存在且是合法 JSON（所有值都加引号） |
 | 内容偏窄 / 右边留白，或底栏被裁 | 尺寸推算与你的机型有出入。截图量一下填 `SIZE_OVERRIDE`，见「尺寸自适应」 |
-| 月历的数字非常小甚至看不清 | 老版本的 bug：格子是「固定宽度 + 两个弹性 spacer 夹文字」，spacer 会优先抢宽度，把带 `minimumScaleFactor` 的文字压到 1~2pt。已改成不设固定宽度、格子里不放 spacer，靠等宽字体对齐 |
+| 月历的数字非常小甚至看不清 | 老版本的 bug：格子是「固定宽度 + 两个弹性 spacer 夹文字」，spacer 抢宽度的优先级高于文字，把带 `minimumScaleFactor` 的文字压到 1~2pt。已移除 spacer |
+| 月历日期对不齐 | 也是老版本的 bug：曾试过「不设列宽、靠等宽字体自然对齐」，但列宽只差 0.6pt 就填满，字宽估算稍有偏差整行就被压缩，各格压缩量不同于是错位。现在列宽 = `floor(可用宽 / 8)` 写死，字号反过来受列宽约束并留 3pt 余量，文字禁止缩放 |
 | 行情图标全是绿点、MKT 右边没有时段标签 | 旧版脚本写的缓存里没有 `session` 字段。已加缓存 schema 版本号，升级后会自动丢弃旧缓存 |
 | 日程标题截断太多 | 调小 `RIGHT_RATIO`（如 0.42） |
 | 图标显示成文字 | 该 SF Symbol 在你的 iOS 版本里不存在，这是预期的回退行为 |

@@ -6,9 +6,9 @@
   (iPhone 15/16 Pro Max, 15/16 Plus): widget 372x386, measured off a real
   screenshot (dark rounded rect spans x 89..1204, y 253..1411 at 3x).
   Font 13.2, left column 182, right column 161. The month grid font is
-  adaptive - 10.6pt here, with a bridge present - and its columns line up
-  because every date is padded to two monospace characters, not because
-  the cells have a fixed width.
+  adaptive - 10.6pt here, with a bridge present. Columns line up because
+  each cell is a fixed width (floor(innerW/8) = 18pt) holding a two-character
+  padded string, with 3pt of slack so nothing ever needs to be scaled down.
   SF Symbols are approximated with inline SVG here; the widget uses the real ones.
   Shown in POST (after-hours) market state to exercise the session styling.
 -->
@@ -37,8 +37,8 @@
   .right{width:161px;display:flex;flex-direction:column;gap:3px}
   .ev{display:flex;gap:4px;align-items:center;white-space:nowrap}
   .ev .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
-  .grid{display:flex;gap:4.4px}
-  .grid div{font-size:10.6px;line-height:13.5px;text-align:center;padding:1px}
+  .grid{display:flex;gap:1px}
+  .grid div{width:18px;box-sizing:border-box;font-size:10.6px;line-height:13.5px;text-align:left;padding:1px 0}
   .today{background:#e6edf3;color:#0b0f14;border-radius:3px;font-weight:bold}
   .ic{width:12px;height:12px;flex:none;vertical-align:-1px}
   .ic.s{width:10px;height:10px}
@@ -128,13 +128,13 @@
 
     <div class="right">
       <div class="blk t-blue">
-        <div class="grid"><div class="faint">wk</div><div class="blue b">M</div><div class="blue b">T</div><div class="blue b">W</div><div class="blue b">T</div><div class="blue b">F</div><div class="faint b">S</div><div class="faint b">S</div></div>
-        <div class="grid"><div class="faint">31</div><div class="faint">27</div><div class="faint">28</div><div class="faint">29</div><div class="faint">30</div><div class="faint">31</div><div class="dim">1</div><div class="dim">2</div></div>
-        <div class="grid"><div class="faint">32</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div class="dim">8</div><div class="dim">9</div></div>
+        <div class="grid"><div class="faint">wk</div><div class="blue b">&nbsp;M</div><div class="blue b">&nbsp;T</div><div class="blue b">&nbsp;W</div><div class="blue b">&nbsp;T</div><div class="blue b">&nbsp;F</div><div class="faint b">&nbsp;S</div><div class="faint b">&nbsp;S</div></div>
+        <div class="grid"><div class="faint">31</div><div class="faint">27</div><div class="faint">28</div><div class="faint">29</div><div class="faint">30</div><div class="faint">31</div><div class="dim">&nbsp;1</div><div class="dim">&nbsp;2</div></div>
+        <div class="grid"><div class="faint">32</div><div>&nbsp;3</div><div>&nbsp;4</div><div>&nbsp;5</div><div>&nbsp;6</div><div>&nbsp;7</div><div class="dim">&nbsp;8</div><div class="dim">&nbsp;9</div></div>
         <div class="grid"><div class="faint">33</div><div>10</div><div class="blue b">11</div><div>12</div><div>13</div><div>14</div><div class="dim">15</div><div class="dim">16</div></div>
         <div class="grid"><div class="faint">34</div><div>17</div><div>18</div><div class="blue b">19</div><div>20</div><div>21</div><div class="dim">22</div><div class="dim">23</div></div>
         <div class="grid"><div class="blue">35</div><div>24</div><div class="today">25</div><div>26</div><div>27</div><div class="blue b">28</div><div class="blue b">29</div><div class="blue b">30</div></div>
-        <div class="grid"><div class="faint">36</div><div>31</div><div class="faint">1</div><div class="faint">2</div><div class="faint">3</div><div class="faint">4</div><div class="faint">5</div><div class="faint">6</div></div>
+        <div class="grid"><div class="faint">36</div><div>31</div><div class="faint">&nbsp;1</div><div class="faint">&nbsp;2</div><div class="faint">&nbsp;3</div><div class="faint">&nbsp;4</div><div class="faint">&nbsp;5</div><div class="faint">&nbsp;6</div></div>
       </div>
 
       <div class="blk t-purple">
