@@ -2,19 +2,22 @@
 <html><head><meta charset="utf-8">
 <!--
   Static mock-up of the widget, used only to render preview.png.
-  Geometry mirrors what GeekBoard.js computes for a 393x852 screen
-  (iPhone 14 Pro / 15 / 15 Pro / 16): widget 338x354, font 11.9,
-  left column 164, right column 145, calendar cell 16.
+  Geometry mirrors what GeekBoard.js computes for a 430x932 screen
+  (iPhone 15/16 Pro Max, 15/16 Plus): widget 372x364 - measured on a real
+  device, not taken from the old published size tables - font 13.2,
+  left column 182, right column 161, calendar cell 18 at an
+  adaptive 10.1pt (the script shrinks the month grid to whatever space the
+  quote and activity blocks leave).
   SF Symbols are approximated with inline SVG here; the widget uses the real ones.
   Shown in POST (after-hours) market state to exercise the session styling.
 -->
 <style>
   html,body{margin:0}
-  body{display:flex;align-items:center;justify-content:center;width:420px;height:440px;
+  body{display:flex;align-items:center;justify-content:center;width:440px;height:452px;
        background:linear-gradient(160deg,#2b2f3a,#12141a)}
-  .w{width:338px;height:354px;box-sizing:border-box;border-radius:22px;background:#0b0f14;
+  .w{width:372px;height:364px;box-sizing:border-box;border-radius:22px;background:#0b0f14;
      padding:8px 11px 6px 11px;font-family:"DejaVu Sans Mono","Noto Sans CJK JP",monospace;
-     font-size:11.9px;line-height:14.9px;color:#e6edf3;display:flex;flex-direction:column;gap:2px;
+     font-size:13.2px;line-height:16.2px;color:#e6edf3;display:flex;flex-direction:column;gap:2px;
      overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.5)}
   .blk{border-radius:5px;padding:1px 5px;box-sizing:border-box}
   .row{display:flex;align-items:center;gap:4px;white-space:nowrap}
@@ -27,19 +30,19 @@
   .t-purple{background:rgba(188,140,255,.085)}.t-orange{background:rgba(247,129,102,.085)}
   .t-green{background:rgba(63,185,80,.085)}.t-dim{background:rgba(139,148,158,.085)}
   .t-pink{background:rgba(250,17,79,.085)}
-  .sm{font-size:10.4px}.q{font-size:9.4px;line-height:13.2px}.gr{font-size:9.4px}
+  .sm{font-size:11.7px}.q{font-size:10.7px;line-height:14.5px}.gr{font-size:11.2px}
   .body{display:flex;align-items:flex-start;flex:1;gap:7px}
-  .left{width:164px;display:flex;flex-direction:column;gap:2px}
-  .right{width:145px;display:flex;flex-direction:column;gap:3px}
+  .left{width:182px;display:flex;flex-direction:column;gap:2px}
+  .right{width:161px;display:flex;flex-direction:column;gap:3px}
   .ev{display:flex;gap:4px;align-items:center;white-space:nowrap}
   .ev .t{overflow:hidden;text-overflow:ellipsis;min-width:0}
   .grid{display:flex}
-  .grid div{width:16px;height:11.9px;font-size:9.4px;text-align:center;line-height:11.9px}
+  .grid div{width:18px;height:12.6px;font-size:10.1px;text-align:center;line-height:12.6px}
   .today{background:#e6edf3;color:#0b0f14;border-radius:3px;font-weight:bold}
-  .ic{width:11px;height:11px;flex:none;vertical-align:-1px}
-  .ic.s{width:9px;height:9px}
+  .ic{width:12px;height:12px;flex:none;vertical-align:-1px}
+  .ic.s{width:10px;height:10px}
   .rings{display:flex;gap:5px;align-items:center}
-  .rings .col{display:flex;flex-direction:column;font-size:9.9px;line-height:12px}
+  .rings .col{display:flex;flex-direction:column;font-size:10.7px;line-height:14.1px}
 </style></head><body>
 <svg style="display:none">
   <symbol id="cal" viewBox="0 0 24 24"><path d="M3 8h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8zM5 2h2v3H5zm12 0h2v3h-2zM3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1H3z"/></symbol>
@@ -108,16 +111,15 @@
         <div class="ev"><span class="green">14:00</span><span class="t green">1:1 Kenji</span><span class="sp"></span><span class="sm faint">45m</span></div>
         <div class="ev"><span class="blue">16:30</span><span class="t blue">Dentist</span><span class="sp"></span><span class="sm faint">1h</span></div>
         <div class="ev"><span>19:00</span><span class="t">Dinner @ Ginza</span><span class="sp"></span><span class="sm faint">2h</span></div>
-        <div class="ev"><span>21:00</span><span class="t">Late sync</span><span class="sp"></span><span class="sm faint">30m</span></div>
-        <div class="ev"><span class="dim">+08:00</span><span class="t dim">Board prep</span><span class="sp"></span><span class="sm faint">1h</span></div>
-        <div class="ev"><span class="dim">+10:15</span><span class="t dim">Flight HND-SFO</span><span class="sp"></span><span class="sm faint">10h</span></div>
+        <div class="ev"><span class="dim">+08:00</span><span class="t dim">Board prep</span><span class="sp"></span><span class="sm faint">8/26</span></div>
+        <div class="ev"><span class="dim">+10:15</span><span class="t dim">Flight HND-SFO</span><span class="sp"></span><span class="sm faint">8/26</span></div>
+        <div class="ev"><span class="sm faint">+4 more</span></div>
       </div>
       <div class="blk t-orange">
         <div class="ev"><svg class="ic s orange"><use href="#checklist"/></svg><span class="sm b orange">TODO</span><span class="sm red">4·1!</span><span class="sp"></span></div>
         <div class="ev"><svg class="ic s red"><use href="#excl"/></svg><span class="t red">Pay rent</span><span class="sp"></span><span class="sm red">-2d</span></div>
         <div class="ev"><svg class="ic s faint"><use href="#circ"/></svg><span class="t">Call bank</span><span class="sp"></span><span class="sm faint">17:00</span></div>
-        <div class="ev"><svg class="ic s faint"><use href="#circ"/></svg><span class="t dim">Buy milk</span><span class="sp"></span><span class="sm faint">8/26</span></div>
-        <div class="ev"><svg class="ic s faint"><use href="#circ"/></svg><span class="t dim">Renew passport</span><span class="sp"></span><span class="sm faint">8/28</span></div>
+        <div class="ev"><span class="sm faint">+2 more</span></div>
       </div>
     </div>
 
@@ -160,14 +162,14 @@
     </div>
   </div>
 
-  <div class="blk t-green row" style="font-size:10.9px">
+  <div class="blk t-green row" style="font-size:12.2px">
     <svg class="ic s green"><use href="#globe"/></svg><span>203.0.113.5</span>
     <span class="dim">KDDI JP</span>
     <svg class="ic s faint"><use href="#unlock"/></svg><span class="b dim">VPN OFF</span>
     <span class="sp"></span>
     <svg class="ic s faint"><use href="#refresh"/></svg><span class="faint">14:32</span>
   </div>
-  <div class="blk t-dim row" style="font-size:10.9px">
+  <div class="blk t-dim row" style="font-size:12.2px">
     <svg class="ic s dim"><use href="#wifi"/></svg><span class="dim">HomeNet-5G 192.168.1.23</span>
     <svg class="ic s dim"><use href="#ant"/></svg><span class="dim">KDDI 5G</span>
     <svg class="ic s" style="color:#e6edf3"><use href="#alarm"/></svg><span>06:30</span>

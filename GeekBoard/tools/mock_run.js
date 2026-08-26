@@ -8,6 +8,9 @@
 //   OFFLINE=1                      every network request throws
 //   NOLOC=1                        location permission denied
 //   EMPTY=1                        no calendar events / reminders
+//   LIGHT=1                        a light day: few events, zero reminders (reproduces the empty-gap bug)
+//   NOPERIOD=1                     Yahoo omits currentTradingPeriod (session must read UNKNOWN, not OPEN)
+//   STALECACHE=1                   seed the cache with the OLD schema (must be discarded, not rendered)
 //   BRIDGE=0                       no Shortcuts bridge file   BRIDGE=stale  bridge file is old
 //   NOSYM=1                        SFSymbol.named returns null (tests the text fallbacks)
 //   CACHE=/tmp/gbcache.json        persist the mocked cache between runs, so TTL behaviour is testable
@@ -54,6 +57,15 @@ class Stack {
 class ListWidget extends Stack { constructor() { super(); this.dir = "v"; } presentLarge() { return Promise.resolve(); } }
 const CACHE_FILE = process.env.CACHE;
 const files = (CACHE_FILE && fs.existsSync(CACHE_FILE)) ? JSON.parse(fs.readFileSync(CACHE_FILE, "utf8")) : {};
+if (process.env.STALECACHE) {
+  // exactly what the previous release wrote: no schema tag, quote objects with no `session`
+  const old = (v) => JSON.stringify({ t: NOW.getTime(), v });
+  files["/local/geekboard-cache/stocks.json"] = old([
+    { sym: "AAPL", price: 309.9, pct: -0.14, cur: "USD" },
+    { sym: "NVDA", price: 213.05, pct: 2.19, cur: "USD" },
+  ]);
+  files["/local/geekboard-cache/crypto.json"] = old([{ sym: "BTC", price: 78904, pct: -2.04 }]);
+}
 const fmLocal = { joinPath: (a, b) => a + "/" + b, documentsDirectory: () => "/local", fileExists: p => p in files || p === "/local/geekboard-cache", createDirectory() {}, readString: p => files[p], writeString: (p, s) => { files[p] = s; } };
 const bridgeAgeH = process.env.BRIDGE === "stale" ? 9 : 0.7;
 const fmIcloud = Object.assign({}, fmLocal, { documentsDirectory: () => "/icloud", downloadFileFromiCloud: async () => {}, modificationDate: () => new RealDate(NOW.getTime() - bridgeAgeH * 3600000) });
@@ -82,7 +94,9 @@ function chartResponse(sym) {
   const win = SESSION === "PRE" ? cp.pre : SESSION === "POST" ? cp.post : cp.regular;
   return {
     chart: { result: [{
-      meta: { symbol: sym, currency: "USD", regularMarketPrice: reg, previousClose: prev, chartPreviousClose: prev, currentTradingPeriod: cp },
+      meta: Object.assign(
+        { symbol: sym, currency: "USD", regularMarketPrice: reg, previousClose: prev, chartPreviousClose: prev },
+        process.env.NOPERIOD ? {} : { currentTradingPeriod: cp }),
       timestamp: [win.start + 60, nowSec - 120],
       indicators: { quote: [{ close: [null, (SESSION === "PRE" || SESSION === "POST") ? ext : reg] }] },
     }] },
@@ -119,7 +133,7 @@ class Device {
   static batteryLevel() { return 0.84; }
   static isCharging() { return false; }
   static screenSize() {
-    const [w, h] = (process.env.SCREEN || "393x852").split("x").map(Number);
+    const [w, h] = (process.env.SCREEN || "430x932").split("x").map(Number);
     return { width: w, height: h };
   }
 }
@@ -128,14 +142,36 @@ const CALS = [cal("Work"), cal("Personal"), cal("Birthdays")];
 const ev = (title, h, m, dur, all, c) => ({ title, startDate: new RealDate(2026, 7, 25, h, m), endDate: new RealDate(2026, 7, 25, h, m + dur), isAllDay: !!all, calendar: c || CALS[0] });
 const evT = (title, h, m, dur) => ({ title, startDate: new RealDate(2026, 7, 26, h, m), endDate: new RealDate(2026, 7, 26, h, m + dur), isAllDay: false, calendar: CALS[0] });
 class Calendar { static async forEvents() { return CALS; } static async forReminders() { return [cal("Todo"), cal("Shopping")]; } }
+const evD = (title, dayOff, h, m, dur, all) => ({
+  title,
+  startDate: new RealDate(2026, 7, 25 + dayOff, h, m),
+  endDate: new RealDate(2026, 7, 25 + dayOff, h, m + dur),
+  isAllDay: !!all, calendar: CALS[0],
+});
+const FULL_DAY = [
+  ev("Standup", 9, 30, 30), ev("Design review w/ platform team", 11, 0, 60),
+  ev("Deploy freeze", 0, 0, 0, true, CALS[1]), ev("1:1 Kenji", 14, 0, 45),
+  ev("Dentist", 16, 30, 60), ev("Dinner @ Ginza", 19, 0, 120), ev("Late sync", 21, 0, 30),
+];
+const LIGHT_DAY = [ev("还款日 中国银行", 0, 0, 0, true, CALS[1]), ev("morning standup", 9, 30, 30), ev("TAI Lab 组会", 13, 0, 60)];
+const AHEAD = [
+  evD("Board prep", 1, 8, 0, 60), evD("Flight HND-SFO", 1, 10, 15, 600),
+  evD("中元节", 1, 0, 0, 0, true), evD("Quarterly review", 2, 10, 0, 90),
+  evD("Team offsite", 3, 9, 0, 480), evD("Dentist follow-up", 4, 15, 0, 30),
+  evD("Visa appointment", 5, 11, 0, 60), evD("Parents visiting", 6, 18, 0, 120),
+];
 class CalendarEvent {
-  static async today() { return process.env.EMPTY ? [] : [ev("Standup", 9, 30, 30), ev("Design review w/ platform team", 11, 0, 60), ev("Deploy freeze", 0, 0, 0, true, CALS[1]), ev("1:1 Kenji", 14, 0, 45), ev("Dentist", 16, 30, 60), ev("Dinner @ Ginza", 19, 0, 120), ev("Late sync", 21, 0, 30)]; }
-  static async tomorrow() { return process.env.EMPTY ? [] : [evT("Flight HND-SFO", 10, 15, 600), evT("Board prep", 8, 0, 60)]; }
-  static async between() { return [ev("x", 9, 0, 60), { title: "y", startDate: new RealDate(2026, 7, 28, 9), endDate: new RealDate(2026, 7, 30, 9), isAllDay: true, calendar: CALS[0] }]; }
+  // the widget now pulls the whole agenda window through between()
+  static async between(from, to) {
+    if (process.env.EMPTY) return [];
+    const base = process.env.LIGHT ? LIGHT_DAY : FULL_DAY;
+    const all = [...base, ...AHEAD];
+    return all.filter(e => e.startDate >= from && e.startDate < to);
+  }
 }
 const rm = (title, due, pr, t) => ({ title, dueDate: due, priority: pr || 0, dueDateIncludesTime: !!t, calendar: cal("Todo") });
 class Reminder {
-  static async allIncomplete() { return process.env.EMPTY ? [] : [rm("Renew passport", new RealDate(2026, 7, 28)), rm("Pay rent", new RealDate(2026, 7, 23), 1), rm("Call bank", new RealDate(2026, 7, 25, 17, 0), 0, true), rm("Buy milk", new RealDate(2026, 7, 26)), rm("Far away", new RealDate(2026, 8, 20))]; }
+  static async allIncomplete() { return (process.env.EMPTY || process.env.LIGHT) ? [] : [rm("Renew passport", new RealDate(2026, 7, 28)), rm("Pay rent", new RealDate(2026, 7, 23), 1), rm("Call bank", new RealDate(2026, 7, 25, 17, 0), 0, true), rm("Buy milk", new RealDate(2026, 7, 26)), rm("Far away", new RealDate(2026, 8, 20))]; }
 }
 class Script { static setWidget(w) { global.__widget = w; } static complete() {} }
 const config = { runsInWidget: true };
@@ -161,6 +197,6 @@ const src = fs.readFileSync(__dirname + "/../GeekBoard.js", "utf8");
   };
   render(w, "");
   if (CACHE_FILE) fs.writeFileSync(CACHE_FILE, JSON.stringify(files));
-  console.error(`\n[mock] screen=${process.env.SCREEN || "393x852"} session=${SESSION} network requests=${requestCount}`);
+  console.error(`\n[mock] screen=${process.env.SCREEN || "430x932"} session=${SESSION} network requests=${requestCount}`);
   process.exit(0);
 })().catch(e => { console.error("RUN ERROR:", e); process.exit(1); });

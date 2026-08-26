@@ -52,8 +52,8 @@ const CONFIG = {
   NET_TIMEOUT_S: 8,
 
   // ---- 布局 ----
-  AUTO_SIZE: true,                           // 按机型自动适配；false 则用下面的 FALLBACK_W/H
-  FALLBACK_W: 338, FALLBACK_H: 354,
+  SIZE_OVERRIDE: null,                       // 尺寸推算不准时手动指定，如 { w: 372, h: 364 }。量法见 README
+  AGENDA_DAYS: 7,                            // 日程最多往后看几天（行数有余量时自动往后填）
   RIGHT_RATIO: 0.46,                         // 右栏占宽比例
   WEEK_STARTS_MONDAY: true,
   SHOW_ICONS: true,                          // 关掉则纯文字（更省一点，但辨识度低）
@@ -63,31 +63,22 @@ const CONFIG = {
 // =====================================================================
 // DEVICE / SIZE
 // =====================================================================
-// 已知机型：屏幕点数 → 大号 Widget 尺寸。未知机型按比例回退，不会崩。
-const WIDGET_SIZES = {
-  "440x956": [382, 406],   // 16 Pro Max / 17 Pro Max
-  "430x932": [364, 382],   // 15/16 Pro Max, 15/16 Plus, 14 Pro Max
-  "428x926": [364, 382],   // 12/13 Pro Max, 14 Plus
-  "402x874": [348, 371],   // 16 Pro
-  "393x852": [338, 354],   // 14 Pro, 15, 15 Pro, 16
-  "390x844": [338, 354],   // 12/13/13 Pro, 14
-  "375x812": [329, 345],   // X, XS, 11 Pro, 12 mini, 13 mini
-  "414x896": [360, 379],   // XR, XS Max, 11, 11 Pro Max
-  "414x736": [348, 357],   // 6/7/8 Plus
-  "375x667": [321, 324],   // 6/7/8, SE2, SE3
-  "320x568": [292, 311],   // SE1
-};
+// 大号 Widget 的实际尺寸 Scriptable 读不到，只能从屏幕推。
+// 下面两个比例是在真机上量出来的：430x932 的屏，大号 Widget 实测 372x364 pt。
+//   372/430 = 0.865   364/372 = 0.978
+// 网上流传的旧尺寸表（如 430x932 → 364x382）在当前 iOS 上已经不准，宽了会裁字、高了会裁行，
+// 所以这里用比例推算而不是查表。要是你的机器对不上，量一下填 SIZE_OVERRIDE 即可。
+const W_RATIO = 0.865, H_RATIO = 0.978;
 function widgetSize() {
-  if (!CONFIG.AUTO_SIZE) return { w: CONFIG.FALLBACK_W, h: CONFIG.FALLBACK_H, known: false };
+  const o = CONFIG.SIZE_OVERRIDE;
+  if (o && o.w && o.h) return { w: o.w, h: o.h, src: "override" };
   try {
     const s = Device.screenSize();
-    const sw = Math.round(Math.min(s.width, s.height)), sh = Math.round(Math.max(s.width, s.height));
-    const hit = WIDGET_SIZES[sw + "x" + sh];
-    if (hit) return { w: hit[0], h: hit[1], known: true };
-    // 未知机型：大号 Widget 宽约为屏宽的 86%，高约为宽的 1.05 倍。留 2px 安全余量。
-    return { w: Math.round(sw * 0.86) - 2, h: Math.round(sw * 0.86 * 1.05), known: false };
+    const sw = Math.round(Math.min(s.width, s.height));
+    const w = Math.round(sw * W_RATIO);
+    return { w, h: Math.round(w * H_RATIO), src: "screen:" + sw };
   } catch (e) {
-    return { w: CONFIG.FALLBACK_W, h: CONFIG.FALLBACK_H, known: false };
+    return { w: 372, h: 364, src: "fallback" };
   }
 }
 const WSZ = widgetSize();
@@ -106,8 +97,11 @@ const LAY = (() => {
   const chrome = PAD_TOP + PAD_BOT + (lineH + blockV) * 3 + (font + 1 + blockV) * 2 + stackGap * 6;
   // 左栏自身开销：AGENDA / TODO 两个区块的内边距 + 它们之间的间距
   const leftOverhead = blockV * 2 + stackGap;
-  const leftLines = Math.max(6, Math.floor((WSZ.h - chrome - leftOverhead) / lineH));
-  return { W, font, gap, rightW, leftW, lineH, leftLines };
+  // 少排一行作为安全余量：高度估算偏大时，撑爆的代价是底栏被裁掉（丢 IP/VPN），
+  // 而估小的代价只是最后一条未来日程不显示。两害相权取其轻。
+  const leftLines = Math.max(6, Math.floor((WSZ.h - chrome - leftOverhead) / lineH) - 1);
+  const bodyH = WSZ.h - chrome;          // 左右两栏共用的可用高度
+  return { W, font, gap, rightW, leftW, lineH, leftLines, bodyH };
 })();
 
 // =====================================================================
@@ -131,8 +125,8 @@ const F = {
   footBold: Font.boldMonospacedSystemFont(LAY.font - 1),
   quote: Font.regularMonospacedSystemFont(LAY.font - 2.5),
   quoteBold: Font.boldMonospacedSystemFont(LAY.font - 2.5),
-  grid: Font.regularMonospacedSystemFont(LAY.font - 2.5),
-  gridBold: Font.boldMonospacedSystemFont(LAY.font - 2.5),
+  grid: Font.regularMonospacedSystemFont(LAY.font - 2),
+  gridBold: Font.boldMonospacedSystemFont(LAY.font - 2),
 };
 
 // =====================================================================
@@ -180,16 +174,23 @@ function withTimeout(promise, ms) {
 }
 
 // ---- cache ----
+// 缓存里存的对象结构一变，旧缓存就会以错误的形态被渲染（例如缺 session 字段的行情被当成盘中）。
+// 所以带一个 schema 版本号，对不上就当作没有缓存。改动任何被缓存对象的字段时，把这个数字 +1。
+const CACHE_SCHEMA = 2;
 const fm = FileManager.local();
 const CACHE_DIR = fm.joinPath(fm.documentsDirectory(), "geekboard-cache");
 if (!fm.fileExists(CACHE_DIR)) fm.createDirectory(CACHE_DIR, true);
 function cacheRead(key) {
   const p = fm.joinPath(CACHE_DIR, key + ".json");
   if (!fm.fileExists(p)) return null;
-  try { return JSON.parse(fm.readString(p)); } catch (e) { return null; }
+  try {
+    const c = JSON.parse(fm.readString(p));
+    if (!c || c.s !== CACHE_SCHEMA) return null;   // 版本不符 → 视为无缓存，重新取
+    return c;
+  } catch (e) { return null; }
 }
 function cacheWrite(key, v) {
-  fm.writeString(fm.joinPath(CACHE_DIR, key + ".json"), JSON.stringify({ t: Date.now(), v }));
+  fm.writeString(fm.joinPath(CACHE_DIR, key + ".json"), JSON.stringify({ s: CACHE_SCHEMA, t: Date.now(), v }));
 }
 // ttlMin 可以是函数 (cachedValue) => minutes，用于按内容动态决定缓存时长
 async function cached(key, ttlMin, fetcher) {
@@ -320,7 +321,8 @@ async function getAQI(loc) {
 // 据此本地判定 PRE / OPEN / POST / CLOSED，不需要额外请求。
 function sessionOf(meta, nowSec) {
   const p = meta && meta.currentTradingPeriod;
-  if (!p) return { state: "OPEN", until: null };
+  // 拿不到交易时段就如实说不知道。以前这里默认 OPEN，结果是休市时间照样显示绿灯。
+  if (!p) return { state: "UNKNOWN", until: null };
   const inR = (r) => r && nowSec >= r.start && nowSec < r.end;
   if (inR(p.regular)) return { state: "OPEN", until: p.regular.end };
   if (inR(p.pre)) return { state: "PRE", until: p.pre.end };
@@ -369,6 +371,8 @@ async function getStocks() {
     const states = cachedVal.map(q => q && q.session);
     if (states.includes("OPEN")) return CONFIG.TTL_QUOTES.OPEN;
     if (states.includes("PRE") || states.includes("POST")) return CONFIG.TTL_QUOTES.PRE;
+    // 时段未知时别当成休市去缓存 2 小时，按盘中的短 TTL 尽快纠正
+    if (states.some(x => !x || x === "UNKNOWN")) return CONFIG.TTL_QUOTES.OPEN;
     return CONFIG.TTL_QUOTES.CLOSED;
   };
   return await cached("stocks", ttl, async () => {
@@ -478,9 +482,19 @@ function pickCalendars(all, include, exclude) {
 }
 async function getEvents(now) {
   const cals = pickCalendars(await Calendar.forEvents(), CONFIG.CALENDARS, CONFIG.CALENDARS_EXCLUDE);
-  const today = await CalendarEvent.today(cals);
-  const tmr = await CalendarEvent.tomorrow(cals);
-  const clean = list => list.filter(e => e.title).sort((a, b) => a.startDate - b.startDate || a.isAllDay - b.isAllDay);
+  const maxDays = Math.max(1, CONFIG.AGENDA_DAYS);
+  const from = dayStart(now);
+  // 一次拿够未来几天，行数有余量就继续往后填，免得清闲的一天在中间留一大块空白
+  const span = await CalendarEvent.between(from, new Date(from.getTime() + (maxDays + 1) * DAY), cals);
+  const byDay = [];
+  for (let i = 0; i <= maxDays; i++) byDay.push([]);
+  for (const e of span) {
+    if (!e.title) continue;
+    const off = Math.round((dayStart(e.startDate) - from) / DAY);
+    byDay[Math.max(0, Math.min(maxDays, off))].push(e);
+  }
+  for (const d of byDay) d.sort((a, b) => a.startDate - b.startDate || a.isAllDay - b.isAllDay);
+
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
   const gridStart = new Date(first); gridStart.setDate(1 - ((first.getDay() + (CONFIG.WEEK_STARTS_MONDAY ? 6 : 0)) % 7));
   const month = await CalendarEvent.between(gridStart, new Date(gridStart.getTime() + 42 * DAY), cals);
@@ -488,7 +502,8 @@ async function getEvents(now) {
   for (const e of month) {
     for (let d = dayStart(e.startDate); d < e.endDate && eventDays.size < 100; d = new Date(d.getTime() + DAY)) eventDays.add(d.getMonth() + "-" + d.getDate());
   }
-  return { today: clean(today), tomorrow: clean(tmr), eventDays, gridStart };
+  const total = byDay.reduce((n, d) => n + d.length, 0);
+  return { byDay, today: byDay[0], upcoming: total - byDay[0].length, eventDays, gridStart };
 }
 async function getReminders(now) {
   const cals = pickCalendars(await Calendar.forReminders(), CONFIG.REMINDER_LISTS, []);
@@ -579,11 +594,12 @@ const uvColor = uv => uv >= 8 ? C.red : uv >= 6 ? C.amber : uv >= 3 ? C.fg : C.d
 const aqiColor = a => a == null ? C.dim : a <= 50 ? C.green : a <= 100 ? C.amber : a <= 150 ? C.red : C.purple;
 // 交易时段 → 图标 / 颜色 / 标签
 const SESSION_META = {
-  OPEN:   { icon: "circle.fill",  color: C.green,  label: "OPEN",   fb: "●" },
-  PRE:    { icon: "sunrise.fill", color: C.amber,  label: "PRE",    fb: "早" },
-  POST:   { icon: "moon.fill",    color: C.purple, label: "POST",   fb: "晚" },
-  CLOSED: { icon: "pause.fill",   color: C.faint,  label: "CLOSED", fb: "休" },
-  "24H":  { icon: "bolt.fill",    color: C.cyan,   label: "24H",    fb: "∞" },
+  OPEN:    { icon: "circle.fill",  color: C.green,  label: "OPEN",   fb: "●" },
+  UNKNOWN: { icon: "circle",       color: C.faint,  label: "",       fb: "·" },
+  PRE:     { icon: "sunrise.fill", color: C.amber,  label: "PRE",    fb: "早" },
+  POST:    { icon: "moon.fill",    color: C.purple, label: "POST",   fb: "晚" },
+  CLOSED:  { icon: "pause.fill",   color: C.faint,  label: "CLOSED", fb: "休" },
+  "24H":   { icon: "bolt.fill",    color: C.cyan,   label: "24H",    fb: "∞" },
 };
 function ringsImage(b, S) {
   const ctx = new DrawContext();
@@ -698,50 +714,62 @@ async function build() {
   const right = body.addStack(); right.layoutVertically(); right.size = new Size(LAY.rightW, 0); right.spacing = 3;
 
   // ---- LEFT: AGENDA ----
-  const E = ev || { today: [], tomorrow: [] };
+  const E = ev || { byDay: [[]], today: [], upcoming: 0 };
   const remRows = rem || [];
-  const upcoming = E.today.filter(e => !e.isAllDay && e.endDate > now);
-  const nextEv = upcoming.find(e => e.startDate > now);
-  const cur = upcoming.find(e => e.startDate <= now);
-  const evLines = Math.min(E.today.length + Math.min(E.tomorrow.length, 3),
-    Math.max(3, LAY.leftLines - 2 - Math.min(remRows.length, CONFIG.MIN_REMINDER_LINES)));
-  const remLines = Math.max(0, LAY.leftLines - 2 - evLines);
+  const todayAll = E.today || [];
+  const nextEv = todayAll.find(e => !e.isAllDay && e.startDate > now)
+    || (E.byDay || []).slice(1).flat().find(e => !e.isAllDay);
+  const cur = todayAll.find(e => !e.isAllDay && e.startDate <= now && e.endDate > now);
+
+  // 行数分配：提醒事项为 0 时整个 TODO 区块不占位，全部让给日程
+  const remWanted = Math.min(remRows.length, CONFIG.MIN_REMINDER_LINES);
+  const hasTodo = remRows.length > 0;
+  const evLines = Math.max(3, LAY.leftLines - 1 - (hasTodo ? 1 + remWanted : 0));
 
   const agBlock = block(left, C.blue, LAY.leftW);
   const ah = agBlock.addStack(); ah.layoutHorizontally(); ah.centerAlignContent(); ah.spacing = 3;
   icon(ah, "calendar.day.timeline.left", LAY.font - 2.5, C.blue, "");
   txt(ah, "AGENDA", F.smallBold, C.blue);
-  txt(ah, E.today.length + "·" + E.tomorrow.length, F.small, C.dim);
+  txt(ah, todayAll.length + (E.upcoming ? "·" + E.upcoming : ""), F.small, C.dim);
   ah.addSpacer();
   if (cur) { icon(ah, "play.fill", LAY.font - 3, C.green, "▶"); txt(ah, hm(cur.endDate), F.small, C.green); }
   else if (nextEv) {
     icon(ah, "arrow.right", LAY.font - 3, C.blue, "→");
     const rel = ah.addDate(nextEv.startDate); rel.applyRelativeStyle(); rel.font = F.small; rel.textColor = C.blue; rel.lineLimit = 1; rel.minimumScaleFactor = 0.7;
-  } else if (!E.today.length) txt(ah, "free", F.small, C.faint);
+  } else if (!todayAll.length) txt(ah, "clear", F.small, C.faint);
 
-  let shown = 0;
-  const todayCount = Math.min(E.today.length, evLines);
-  let todayList = E.today;
-  if (todayList.length > todayCount) {
-    const future = todayList.filter(e => e.endDate > now);
-    todayList = future.length >= todayCount ? future : todayList.slice(todayList.length - todayCount);
-  }
-  const evRow = (e, prefix, dimAll) => {
+  const evRow = (e, dayOff) => {
     const s = agBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
     const past = e.endDate <= now, ongoing = e.startDate <= now && e.endDate > now;
-    const col = dimAll || past ? C.dim : ongoing ? C.green : e === nextEv ? C.blue : C.fg;
-    txt(s, prefix + (e.isAllDay ? "ALL  " : hm(e.startDate)), F.body, past ? C.faint : dimAll ? C.dim : col);
-    txt(s, e.title, F.body, col, { scale: 0.85 });
+    const future = dayOff > 0;
+    const col = future || past ? C.dim : ongoing ? C.green : e === nextEv ? C.blue : C.fg;
+    const when = e.isAllDay ? "ALL  " : hm(e.startDate);
+    txt(s, (future ? "+" : "") + when, F.body, past ? C.faint : future ? C.dim : col);
+    txt(s, e.title, F.body, past ? C.dim : col, { scale: 0.85 });
     s.addSpacer();
-    if (!e.isAllDay) txt(s, durStr(e.endDate - e.startDate), F.small, C.faint);
+    // 今天的事看时长有用；往后几天的事，看是哪天更有用
+    if (future) txt(s, md(e.startDate), F.small, C.faint);
+    else if (!e.isAllDay) txt(s, durStr(e.endDate - e.startDate), F.small, C.faint);
     else if (e.calendar && e.calendar.title) txt(s, e.calendar.title.slice(0, 6), F.small, C.faint);
   };
-  for (const e of todayList.slice(0, todayCount)) { evRow(e, ""); shown++; }
-  for (const e of E.tomorrow.slice(0, evLines - shown)) { evRow(e, "+", true); shown++; }
-  const hidden = E.today.length + E.tomorrow.length - shown;
+
+  // 今天：行数不够时先丢已结束的
+  let todayList = todayAll;
+  if (todayList.length > evLines) {
+    const live = todayList.filter(e => e.endDate > now);
+    todayList = live.length >= evLines ? live : todayList.slice(todayList.length - evLines);
+  }
+  let shown = 0;
+  for (const e of todayList) { if (shown >= evLines) break; evRow(e, 0); shown++; }
+  for (let d = 1; d < (E.byDay || []).length && shown < evLines; d++) {
+    for (const e of E.byDay[d]) { if (shown >= evLines) break; evRow(e, d); shown++; }
+  }
+  const hiddenEv = todayAll.length + (E.upcoming || 0) - shown;
+  if (hiddenEv > 0) txt(agBlock, "+" + hiddenEv + " more", F.small, C.faint);
 
   // ---- LEFT: TODO ----
-  if (remLines > 0) {
+  if (hasTodo) {
+    const remLines = Math.max(1, LAY.leftLines - 2 - shown - (hiddenEv > 0 ? 1 : 0));
     const tdBlock = block(left, C.orange, LAY.leftW);
     const rh = tdBlock.addStack(); rh.layoutHorizontally(); rh.centerAlignContent(); rh.spacing = 3;
     const overdue = remRows.filter(r => r.dueDate && r.dueDate < now).length;
@@ -749,7 +777,6 @@ async function build() {
     txt(rh, "TODO", F.smallBold, C.orange);
     txt(rh, String(remRows.length) + (overdue ? "·" + overdue + "!" : ""), F.small, overdue ? C.red : C.dim);
     rh.addSpacer();
-    if (hidden > 0) txt(rh, "+" + hidden + "ev", F.small, C.faint);
     for (const r of remRows.slice(0, remLines)) {
       const s = tdBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 4;
       const od = r.dueDate && r.dueDate < now;
@@ -770,11 +797,34 @@ async function build() {
   }
 
   // ---- RIGHT: 月历 ----
+  // 右栏三块（月历 / 行情 / 活动）要一起塞进 bodyH。行情和活动的行数是定的，
+  // 所以把富余量折算成月历的字号——宁可月历小一点，也不能撑爆把底栏挤出去。
+  const gsPre = E.gridStart || (() => { const f = new Date(now.getFullYear(), now.getMonth(), 1); f.setDate(1 - ((f.getDay() + (CONFIG.WEEK_STARTS_MONDAY ? 6 : 0)) % 7)); return f; })();
+  const calRows = 1 + Math.ceil((Math.round((new Date(now.getFullYear(), now.getMonth() + 1, 0) - gsPre) / DAY) + 1) / 7);
+  const quotesPre = [...((stocks && stocks.v) || []), ...((crypto && crypto.v) || [])].slice(0, CONFIG.QUOTE_ROWS);
+  const qRowH = (LAY.font - 2.5) * 1.32;        // 行情数据行
+  const hdrRowH = (LAY.font - 1.5) * 1.32;       // 区块标题行（字号比数据行大一号）
+  const actRows = (bridge && (bridge.move != null || bridge.steps != null)) ? 4 : 1;
+  // 留 8pt 余量：这些行高是按字号估的，估得偏乐观就会把底栏挤出去，宁可月历字小一点
+  const rightPad = (CONFIG.SHOW_SECTION_TINT ? BLOCK_PAD_V * 6 : 0) + 6 + 8;
+  // 先按全部行情行数试算；月历字号已经压到下限还塞不下，就减行情行数（最少留 2 行）
+  let qShown = quotesPre.length, gridFont = 0;
+  for (;;) {
+    const avail = LAY.bodyH - rightPad - hdrRowH - qShown * qRowH - actRows * qRowH;
+    gridFont = Math.min(LAY.font - 2, avail / calRows / 1.25);
+    if (gridFont >= 7.5 || qShown <= 2) break;
+    qShown--;
+  }
+  gridFont = Math.max(7.5, gridFont);
+  const FG = { grid: Font.regularMonospacedSystemFont(gridFont), gridBold: Font.boldMonospacedSystemFont(gridFont) };
+
   const calBlock = block(right, C.blue, LAY.rightW);
   const innerW = LAY.rightW - (CONFIG.SHOW_SECTION_TINT ? 10 : 0);
-  const cellW = Math.floor(innerW / 8), cellH = LAY.font;
+  const cellW = Math.floor(innerW / 8);
+  // 只固定宽度、高度留 0（自动）。给 stack 设死高度会让 Scriptable 把文字硬压进去，
+  // 连 minimumScaleFactor 的下限都不认——月历的字曾因此被压到 1pt 左右，几乎看不见。
   const cell = (row, s, font, color, bg) => {
-    const c = row.addStack(); c.size = new Size(cellW, cellH); c.centerAlignContent();
+    const c = row.addStack(); c.size = new Size(cellW, 0); c.centerAlignContent();
     if (bg) { c.backgroundColor = bg; c.cornerRadius = 3; }
     c.addSpacer();
     const t = c.addText(s); t.font = font; t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6;
@@ -782,16 +832,16 @@ async function build() {
   };
   const hdr = calBlock.addStack(); hdr.layoutHorizontally();
   const dn = CONFIG.WEEK_STARTS_MONDAY ? ["M", "T", "W", "T", "F", "S", "S"] : ["S", "M", "T", "W", "T", "F", "S"];
-  cell(hdr, "wk", F.grid, C.faint);
-  dn.forEach((d, i) => cell(hdr, d, F.gridBold, ((CONFIG.WEEK_STARTS_MONDAY && i >= 5) || (!CONFIG.WEEK_STARTS_MONDAY && (i === 0 || i === 6))) ? C.faint : C.blue));
-  const gs = E.gridStart || (() => { const f = new Date(now.getFullYear(), now.getMonth(), 1); f.setDate(1 - ((f.getDay() + (CONFIG.WEEK_STARTS_MONDAY ? 6 : 0)) % 7)); return f; })();
+  cell(hdr, "wk", FG.grid, C.faint);
+  dn.forEach((d, i) => cell(hdr, d, FG.gridBold, ((CONFIG.WEEK_STARTS_MONDAY && i >= 5) || (!CONFIG.WEEK_STARTS_MONDAY && (i === 0 || i === 6))) ? C.faint : C.blue));
+  const gs = gsPre;
   const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   const rowsNeeded = Math.ceil((Math.round((lastOfMonth - gs) / DAY) + 1) / 7);
   for (let r = 0; r < rowsNeeded; r++) {
     const row = calBlock.addStack(); row.layoutHorizontally();
     const wkDate = new Date(gs.getTime() + r * 7 * DAY);
     const isCurWeek = isoWeek(wkDate) === isoWeek(now) && Math.abs(wkDate - now) < 8 * DAY;
-    cell(row, String(isoWeek(wkDate)), F.grid, isCurWeek ? C.blue : C.faint);
+    cell(row, String(isoWeek(wkDate)), FG.grid, isCurWeek ? C.blue : C.faint);
     for (let i = 0; i < 7; i++) {
       const d = new Date(gs.getTime() + (r * 7 + i) * DAY);
       const inMonth = d.getMonth() === now.getMonth();
@@ -800,13 +850,13 @@ async function build() {
       const has = E.eventDays && E.eventDays.has(d.getMonth() + "-" + d.getDate());
       let col = !inMonth ? C.faint : wkend ? C.dim : C.fg;
       if (has && inMonth && !isToday) col = C.blue;
-      if (isToday) cell(row, String(d.getDate()), F.gridBold, C.bg, C.fg);
-      else cell(row, String(d.getDate()), has && inMonth ? F.gridBold : F.grid, col);
+      if (isToday) cell(row, String(d.getDate()), FG.gridBold, C.bg, C.fg);
+      else cell(row, String(d.getDate()), has && inMonth ? FG.gridBold : FG.grid, col);
     }
   }
 
   // ---- RIGHT: 行情 ----
-  const quotes = [...((stocks && stocks.v) || []), ...((crypto && crypto.v) || [])].slice(0, CONFIG.QUOTE_ROWS);
+  const quotes = quotesPre.slice(0, qShown);
   const mkSession = (stocks && stocks.v && stocks.v.length && stocks.v[0].session) || (quotes.length ? quotes[0].session : null);
   const mkMeta = SESSION_META[mkSession] || SESSION_META.OPEN;
   const mkBlock = block(right, mkSession === "CLOSED" ? C.faint : mkMeta.color, LAY.rightW);
@@ -860,7 +910,7 @@ async function build() {
     const acBlock = block(right, C.faint, LAY.rightW);
     const s = acBlock.addStack(); s.layoutHorizontally(); s.centerAlignContent(); s.spacing = 3;
     icon(s, "figure.walk", LAY.font - 3, C.faint, "");
-    txt(s, "no bridge", F.small, C.faint);
+    txt(s, "no bridge", F.small, C.faint);   // 只在这里说一次，底栏不再重复
   }
 
   w.addSpacer();
@@ -889,8 +939,10 @@ async function build() {
   txt(f1, hm(now), F.foot, C.faint, { right: true });
 
   // ============ FOOTER 2: 本地网络 / SIM / 闹钟 ============
+  // 没有桥接时这一整行只剩一句 "no bridge"，而活动区块已经说过了 —— 干脆整行不画，把高度让出来
+  if (bridge) {
   const f2 = strip(w, C.dim, LAY.W);
-  const bcol = bridge && bridge.stale ? C.faint : C.dim;
+  const bcol = bridge.stale ? C.faint : C.dim;
   if (bridge && (bridge.ssid || bridge.lanIp)) {
     icon(f2, "wifi", LAY.font - 2, bcol, "");
     txt(f2, [bridge.ssid && bridge.ssid.slice(0, 14), bridge.lanIp].filter(Boolean).join(" "), F.foot, bcol);
@@ -903,9 +955,9 @@ async function build() {
     icon(f2, "alarm.fill", LAY.font - 2, bridge.stale ? C.dim : C.fg, "");
     txt(f2, bridge.alarm, F.foot, bridge.stale ? C.dim : C.fg);
   }
-  if (bridge && bridge.stale) txt(f2, "stale " + Math.round((now - bridge.ts) / 3600000) + "h", F.foot, C.amber);
-  if (!bridge) { icon(f2, "wifi.slash", LAY.font - 2, C.faint, ""); txt(f2, "no bridge", F.foot, C.faint); }
+  if (bridge.stale) txt(f2, "stale " + Math.round((now - bridge.ts) / 3600000) + "h", F.foot, C.amber);
   f2.addSpacer();
+  }
 
   return w;
 }
