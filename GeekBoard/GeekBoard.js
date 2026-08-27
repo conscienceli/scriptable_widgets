@@ -704,12 +704,11 @@ function dayBarImage(w, h, now, sunriseStr, sunsetStr, hourlyPop) {
     const cw = w / 24;
     for (let hh = 0; hh < 24; hh++) {
       const pop = num(hourlyPop[hh]);
-      if (pop == null || pop < 10) continue;             // 低于 10% 不画，免得整条都是噪声
-      // 过去的小时压暗但必须仍然可读——第一版压到 0.28 倍，深蓝叠深底直接隐形，
-      // 看起来像「过去没有数据」。0.55 倍 + 0.12 下限：能看清下过雨，又不抢未来的戏
-      const past = hh < now.getHours();
-      const alpha = Math.max(past ? 0.12 : 0, (0.16 + 0.74 * pop / 100) * (past ? 0.55 : 1));
-      ctx.setFillColor(tint(C.blue, alpha));
+      if (pop == null || pop < 10) continue;             // 低于 10% 不画（阈值全天统一，不影响对比）
+      // 全天统一透明度，不给过去的小时压暗。深浅只编码一件事：降雨概率。
+      // 曾经给过去的小时降透明度，结果过去的 40% 看起来比未来的 25% 还浅，
+      // 全天对比就失真了——「现在」的位置游标已经标了，不需要第二重编码。
+      ctx.setFillColor(tint(C.blue, 0.16 + 0.74 * pop / 100));
       ctx.fillRect(new Rect(hh * cw + 0.4, sunH + gap, cw - 0.8, rainH));
     }
   }

@@ -11,7 +11,8 @@
   Shown with a bridge present and the market open (sparklines visible;
   after-hours rows would show the session icon instead). The stock rows
   carry two-day sparklines (drawn from the same chart request the quotes use),
-  the day bar gains an hourly-rain strip on the same 0-24h axis, agenda rows
+  the day bar gains an hourly-rain strip on the same 0-24h axis
+  (uniform alpha all day - opacity encodes probability only, the cursor marks now), agenda rows
   are prefixed with their calendar's real colour, and the header moon shows
   the actual phase computed from the lunar day.
 -->
@@ -135,8 +136,8 @@
     </g>
     <!-- rain: hours 11..19, alpha follows probability; hours before "now" dimmed -->
     <g fill="#7AA2F7">
-      <rect x="160.8" y="6" width="13.8" height="3" opacity=".16"/>
-      <rect x="175.4" y="6" width="13.8" height="3" opacity=".26"/>
+      <rect x="160.8" y="6" width="13.8" height="3" opacity=".38"/>
+      <rect x="175.4" y="6" width="13.8" height="3" opacity=".57"/>
       <rect x="204.6" y="6" width="13.8" height="3" opacity=".38"/>
       <rect x="219.2" y="6" width="13.8" height="3" opacity=".57"/>
       <rect x="233.7" y="6" width="13.8" height="3" opacity=".75"/>
