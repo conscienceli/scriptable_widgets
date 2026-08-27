@@ -705,7 +705,10 @@ function dayBarImage(w, h, now, sunriseStr, sunsetStr, hourlyPop) {
     for (let hh = 0; hh < 24; hh++) {
       const pop = num(hourlyPop[hh]);
       if (pop == null || pop < 10) continue;             // 低于 10% 不画，免得整条都是噪声
-      const alpha = (0.16 + 0.74 * pop / 100) * (hh < now.getHours() ? 0.28 : 1);
+      // 过去的小时压暗但必须仍然可读——第一版压到 0.28 倍，深蓝叠深底直接隐形，
+      // 看起来像「过去没有数据」。0.55 倍 + 0.12 下限：能看清下过雨，又不抢未来的戏
+      const past = hh < now.getHours();
+      const alpha = Math.max(past ? 0.12 : 0, (0.16 + 0.74 * pop / 100) * (past ? 0.55 : 1));
       ctx.setFillColor(tint(C.blue, alpha));
       ctx.fillRect(new Rect(hh * cw + 0.4, sunH + gap, cw - 0.8, rainH));
     }
